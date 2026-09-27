@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo } from 'react';
 import { Alert, Pressable, View } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
 
@@ -8,29 +8,48 @@ import { EmptyState } from '@/components/EmptyState';
 import { FormField } from '@/components/FormField';
 import { ScreenContainer } from '@/components/ScreenContainer';
 import { ThemedText } from '@/components/themed-text';
+import { useBudgetRules } from '@/hooks/useBudgetRules';
 import { useCategories } from '@/hooks/useCategories';
 import { Spacing } from '@/theme';
+
+const DEFAULT_GROUPS = ['necesidades', 'ocio', 'deudas', 'ahorro'];
 
 interface CategoryFormValues {
   name: string;
   movementType: 'income' | 'expense';
   budgetGroup: string;
+  newBudgetGroup: string;
 }
 
 export default function CategoriasScreen() {
   const { categories, create, remove } = useCategories();
-  const { control, handleSubmit, reset } = useForm<CategoryFormValues>({
-    defaultValues: { name: '', movementType: 'expense', budgetGroup: 'necesidades' },
+  const { rules } = useBudgetRules();
+  const { control, handleSubmit, watch, reset } = useForm<CategoryFormValues>({
+    defaultValues: { name: '', movementType: 'expense', budgetGroup: 'necesidades', newBudgetGroup: '' },
   });
 
+  const groupOptions = useMemo(() => {
+    const fromCategories = categories.map((c) => c.budgetGroup);
+    const fromRules = rules.flatMap((r) => r.allocations.map((a) => a.label));
+    const all = new Set([...DEFAULT_GROUPS, ...fromCategories, ...fromRules]);
+    return Array.from(all).map((g) => ({ label: g, value: g }));
+  }, [categories, rules]);
+
+  const newBudgetGroup = watch('newBudgetGroup');
+
   const submit = handleSubmit(async (values) => {
-    await create(values);
-    reset({ name: '', movementType: values.movementType, budgetGroup: values.budgetGroup });
+    const budgetGroup = values.newBudgetGroup.trim() || values.budgetGroup;
+    await create({ name: values.name, movementType: values.movementType, budgetGroup });
+    reset({ name: '', movementType: values.movementType, budgetGroup, newBudgetGroup: '' });
   });
 
   return (
     <ScreenContainer>
       <ThemedText type="title">Categorías</ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        El grupo de presupuesto no está limitado a 4 — puedes usar los que ya existen o escribir uno
+        nuevo (hasta 5 por regla de presupuesto, ver "Reglas presupuestarias").
+      </ThemedText>
 
       <Card style={{ gap: Spacing.two }}>
         <Controller
@@ -63,15 +82,27 @@ export default function CategoriasScreen() {
               label="Grupo de presupuesto"
               value={field.value}
               onChange={field.onChange}
-              options={[
-                { label: 'Necesidades', value: 'necesidades' },
-                { label: 'Ocio', value: 'ocio' },
-                { label: 'Deudas', value: 'deudas' },
-                { label: 'Ahorro', value: 'ahorro' },
-              ]}
+              options={groupOptions}
             />
           )}
         />
+        <Controller
+          control={control}
+          name="newBudgetGroup"
+          render={({ field }) => (
+            <FormField
+              label="O escribe un grupo nuevo (opcional)"
+              placeholder="ej. transporte"
+              value={field.value}
+              onChangeText={field.onChange}
+            />
+          )}
+        />
+        {newBudgetGroup.trim() ? (
+          <ThemedText type="small" themeColor="textSecondary">
+            Se guardará con el grupo "{newBudgetGroup.trim()}"
+          </ThemedText>
+        ) : null}
         <Pressable onPress={submit}>
           <Card style={{ alignItems: 'center' }}>
             <ThemedText type="smallBold">+ Agregar categoría</ThemedText>

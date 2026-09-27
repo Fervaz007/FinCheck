@@ -36,6 +36,10 @@ export default function DrawerLayout() {
         options={{ title: 'Movimientos', drawerIcon: drawerIcon('swap-horizontal-outline') }}
       />
       <Drawer.Screen
+        name="recurrentes"
+        options={{ title: 'Recurrentes', drawerIcon: drawerIcon('repeat-outline') }}
+      />
+      <Drawer.Screen
         name="deudas"
         options={{ title: 'Deudas', drawerIcon: drawerIcon('card-outline') }}
       />

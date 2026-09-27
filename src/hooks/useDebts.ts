@@ -2,7 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { confirmPayment, deriveStatus, listPaymentsForDebt } from '@/dao/debtPaymentsDao';
 import { createDebt, deleteDebt, listDebts, updateDebt } from '@/dao/debtsDao';
+import { createRecurringTransaction } from '@/dao/recurringTransactionsDao';
+import { db } from '@/db/client';
 import type { Debt, NewDebt } from '@/models';
+import { runReconciliation } from '@/services/recurring/reconciliation';
 
 export interface DebtWithPayments extends Debt {
   payments: Awaited<ReturnType<typeof listPaymentsForDebt>>;
@@ -35,8 +38,25 @@ export function useDebts() {
     debts,
     loading,
     refresh,
-    create: async (input: NewDebt) => {
-      await createDebt(input);
+    create: async (
+      input: NewDebt,
+      autoPayment?: { paymentDay: number; accountId: number },
+    ) => {
+      const debt = await createDebt(input);
+      if (autoPayment) {
+        await createRecurringTransaction({
+          kind: 'debt_payment',
+          description: `Pago ${debt.name}`,
+          debtId: debt.id,
+          accountId: autoPayment.accountId,
+          amountCents: debt.monthlyPaymentCents,
+          recurrenceType: 'MONTHLY_DAY',
+          recurrenceConfig: { type: 'MONTHLY_DAY', day: autoPayment.paymentDay },
+          anchorDate: debt.startDate,
+        });
+        // Materialize this month's payment right away if the day already passed.
+        await runReconciliation(db, new Date());
+      }
       await refresh();
     },
     update: async (id: number, input: Partial<NewDebt>) => {

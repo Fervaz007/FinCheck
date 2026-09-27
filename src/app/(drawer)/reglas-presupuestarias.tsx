@@ -10,25 +10,35 @@ import { validateAllocationsSumTo100 } from '@/services/financial/budget';
 import { Spacing } from '@/theme';
 
 interface Row {
+  id: number;
   label: string;
   percentage: string;
 }
 
+const MIN_GROUPS = 1;
+const MAX_GROUPS = 5;
+
+let nextRowId = 0;
+const makeRow = (label = '', percentage = ''): Row => ({ id: nextRowId++, label, percentage });
+
 export default function ReglasPresupuestariasScreen() {
   const { rules, create, activate } = useBudgetRules();
   const [name, setName] = useState('');
-  const [rows, setRows] = useState<Row[]>([
-    { label: 'necesidades', percentage: '' },
-    { label: 'deudas', percentage: '' },
-    { label: 'ahorro', percentage: '' },
-    { label: 'ocio', percentage: '' },
+  const [rows, setRows] = useState<Row[]>(() => [
+    makeRow('necesidades'),
+    makeRow('deudas'),
+    makeRow('ahorro'),
   ]);
 
   const sum = rows.reduce((acc, r) => acc + (Number(r.percentage) || 0), 0);
 
-  const updateRow = (index: number, field: keyof Row, value: string) => {
-    setRows((prev) => prev.map((r, i) => (i === index ? { ...r, [field]: value } : r)));
+  const updateRow = (id: number, field: 'label' | 'percentage', value: string) => {
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
   };
+
+  const addRow = () => setRows((prev) => (prev.length < MAX_GROUPS ? [...prev, makeRow()] : prev));
+  const removeRow = (id: number) =>
+    setRows((prev) => (prev.length > MIN_GROUPS ? prev.filter((r) => r.id !== id) : prev));
 
   const save = async () => {
     const allocations = rows
@@ -57,21 +67,33 @@ export default function ReglasPresupuestariasScreen() {
       <Card style={{ gap: Spacing.two }}>
         <ThemedText type="smallBold">Nueva regla personalizada</ThemedText>
         <FormField label="Nombre" value={name} onChangeText={setName} />
-        {rows.map((row, index) => (
-          <View key={index} style={{ flexDirection: 'row', gap: Spacing.two }}>
+        {rows.map((row) => (
+          <View key={row.id} style={{ flexDirection: 'row', gap: Spacing.two, alignItems: 'flex-end' }}>
             <View style={{ flex: 2 }}>
-              <FormField label="Grupo" value={row.label} onChangeText={(v) => updateRow(index, 'label', v)} />
+              <FormField label="Grupo" value={row.label} onChangeText={(v) => updateRow(row.id, 'label', v)} />
             </View>
             <View style={{ flex: 1 }}>
               <FormField
                 label="%"
                 keyboardType="number-pad"
                 value={row.percentage}
-                onChangeText={(v) => updateRow(index, 'percentage', v)}
+                onChangeText={(v) => updateRow(row.id, 'percentage', v)}
               />
             </View>
+            {rows.length > MIN_GROUPS && (
+              <Pressable onPress={() => removeRow(row.id)} style={{ paddingBottom: Spacing.two }}>
+                <ThemedText themeColor="critical">✕</ThemedText>
+              </Pressable>
+            )}
           </View>
         ))}
+
+        {rows.length < MAX_GROUPS && (
+          <Pressable onPress={addRow}>
+            <ThemedText type="linkPrimary">+ Agregar grupo ({rows.length}/{MAX_GROUPS})</ThemedText>
+          </Pressable>
+        )}
+
         <ThemedText themeColor={sum === 100 ? 'healthy' : 'critical'}>Suma actual: {sum}% (debe ser 100%)</ThemedText>
         <Pressable onPress={save}>
           <Card style={{ alignItems: 'center' }}>

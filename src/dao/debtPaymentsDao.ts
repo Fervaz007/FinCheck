@@ -60,9 +60,17 @@ export async function confirmPayment(paymentId: number, accountId?: number) {
       })
       .where(eq(debtPayments.id, paymentId));
 
+    const newSaldoPendienteCents = Math.max(0, debt.saldoPendienteCents - payment.amountCents);
+    const newRemainingPayments =
+      debt.remainingPayments != null ? Math.max(0, debt.remainingPayments - 1) : null;
+
     await tx
       .update(debts)
-      .set({ saldoPendienteCents: Math.max(0, debt.saldoPendienteCents - payment.amountCents) })
+      .set({
+        saldoPendienteCents: newSaldoPendienteCents,
+        remainingPayments: newRemainingPayments,
+        status: newSaldoPendienteCents === 0 ? 'pagada' : debt.status,
+      })
       .where(eq(debts.id, debt.id));
   });
 }

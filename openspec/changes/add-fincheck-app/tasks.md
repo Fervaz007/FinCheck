@@ -72,13 +72,14 @@
 
 ## 8. Screens: Movimientos (Income & Expenses)
 
-- [x] 8.1 Income entry form (manual) — recurrence toggle NOT built yet; recurring income/expenses can only be seeded via `recurringTransactionsDao` today, not from this form
-- [x] 8.2 Expense entry form (manual, with payment account) — same recurrence-toggle gap as 8.1
+- [x] 8.1 Income entry form (manual, one-time entries)
+- [x] 8.2 Expense entry form (manual, one-time entries, with payment account)
 - [x] 8.3 Movimientos list, filterable by month (via active-month store) and tab (ingresos/egresos), empty state, delete-with-confirm
+- [x] 8.4 Recurring income/expense creation screen (`recurrentes.tsx`) — friendly frequency picker (quincenal, semanal, mensual, cada N días/meses, anual) mapped to the recurrence engine's `RecurrenceConfig`; creating one immediately runs reconciliation so today's occurrence (if due) materializes without waiting for the next app restart. Also caught and fixed a real type bug in `recurrenceTypes.ts` (`MONTHLY_LAST_DAY`'s config type was unconstructible) while building this.
 
 ## 9. Screens: Deudas
 
-- [x] 9.1 Debt create/edit form (create-only; no edit-existing-debt form yet)
+- [x] 9.1 Debt create form, now including `remainingPayments` and an optional automatic monthly payment (día de pago + cuenta → creates a linked `debt_payment` recurring transaction). Confirming a payment now also decrements `remainingPayments` and auto-marks the debt `pagada` at $0. (create-only; no edit-existing-debt form yet)
 - [x] 9.2 Debt detail: payment list, "Confirmar pago" action — confirms against `accounts[0]` rather than letting the user pick the account; vencido/scheduled shown, no separate "confirmed" history view yet
 - [x] 9.3 Delete-debt confirmation dialog (native `Alert.alert`)
 
