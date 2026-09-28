@@ -2,6 +2,11 @@
 
 # dependencies
 node_modules/
+# Untracked deliberately: a lockfile generated on Windows was repeatedly out
+# of sync with what `npm ci` demands on EAS Build's Linux image (missing
+# transitive entries even after a from-scratch regeneration). Letting every
+# environment run a plain `npm install` sidesteps that recurring mismatch.
+package-lock.json
 
 # Expo
 .expo/
