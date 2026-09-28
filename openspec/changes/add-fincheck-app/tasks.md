@@ -117,3 +117,28 @@
 - [x] 14.3 Budget rule 100%-validation verified both by unit test (`budget.test.ts`) and live in the `reglas-presupuestarias` form (blocks save + shows running sum)
 - [x] 14.4 Simulator debt-limit warning verified by unit test (`simulator.test.ts`); UI path wired but not manually exercised on-device
 - [ ] 14.5 Empty/loading states exist on list screens; delete-confirmation dialogs exist for categories/expenses/income/debts — no on-device pass done (no Android device/emulator available in this environment)
+
+## 15. Compromisos (apartado por quincena)
+
+- [x] 15.1 `services/financial/commitments.ts`: pure functions — per-period amount, completion check, adjusted-available (global income minus reserves, not tied to any account)
+- [x] 15.2 Unit tests matching the BBVA ($1,200/2 quincenas) and Luz ($1,000/4 quincenas) examples
+- [x] 15.3 `commitments` table + migration; `dao/commitmentsDao.ts` (CRUD, mark-period-reserved, reset-cycle)
+- [x] 15.4 `hooks/useCommitments.ts`
+- [x] 15.5 `compromisos.tsx` screen: create commitment, per-commitment progress + "apartar esta quincena" / "ya pagué, reiniciar" actions, and a period-income input showing reserved vs. adjusted-available
+- [x] 15.6 Added `commitments` capability spec
+- [x] 15.7 `presupuesto.tsx`: added a separate "¿Cuánto separar de este ingreso?" card — splits one payment across the active **budget rule's percentages** (different concept from Compromisos, which splits **known fixed obligations** across pay periods); `services/financial/budget.ts` gained `computeAllocationForAmount` for this
+- [ ] 15.8 Not yet wired into the main Dashboard's "disponible" figure — Compromisos currently lives as its own screen with its own income-input field, rather than automatically adjusting the Dashboard summary
+- [x] 15.9 Commitments can link to an existing debt (`linked_debt_id`, reads `monthly_payment`) or an existing expense-kind recurring transaction (`linked_recurring_transaction_id`, reads `amount`), instead of requiring the user to re-enter the same amount twice. Resolved live via `dao/commitmentsDao.ts`'s `listActiveCommitmentsResolved`. Also found and fixed a real bug in the drizzle-kit-generated migration `0002_bored_mongoose.sql` (its `INSERT...SELECT` referenced the new linked-id columns on the old table, which didn't have them yet — verified the fix by replaying all 3 migrations against an in-memory sql.js db)
+
+## 16. Deudas jerárquicas (padre/hija)
+
+- [x] 16.1 `debts.parent_debt_id` (auto-referencia nullable) + migración; verificado replayando 0000→0003 contra sql.js
+- [x] 16.2 `services/financial/debtHierarchy.ts`: funciones puras — monto mensual derivado del padre (Σ hijas activas), saldo estimado de una hija (`pago_mensual × meses_restantes`, o 0 si es indefinida), saldo derivado del padre
+- [x] 16.3 Unit tests con el ejemplo BBVA (Llantas $300×12, TV $200×3, Netflix indefinida → mensual derivado $700, saldo derivado $4,200) — 5/5 pasando
+- [x] 16.4 `dao/debtsDao.ts`: `listParentDebts`, `listChildDebts`, `listDebtsResolved` (aplica lo derivado solo si tiene hijas; si no, se comporta igual que hoy), `createChildDebt` (autocompleta `original_amount`/`saldo_pendiente` — nunca se le piden al usuario)
+- [x] 16.5 `dao/debtPaymentsDao.ts` `confirmPayment`: si la deuda pagada tiene hijas, cascada — a cada hija activa con countdown se le resta 1 a `remaining_payments` (nunca un monto en dólares) y se marca `pagada` en 0; hijas indefinidas no se tocan; si todas las hijas terminan (ninguna indefinida sigue activa) el padre también se marca `pagada`; deudas sin hijas siguen exactamente igual que antes
+- [x] 16.6 `services/recurring/reconciliation.ts`: al generar la ocurrencia programada de un `debt_payment`, si la deuda tiene hijas, calcular el monto derivado en ese momento (no usar el `amount_cents` fijo guardado en la recurrencia) — para que la mensualidad generada baje sola cuando una hija termine
+- [x] 16.7 `dao/commitmentsDao.ts`: resolver el monto vinculado a una deuda usando el total derivado si tiene hijas
+- [x] 16.8 `compromisos.tsx`: el selector "vincular a una deuda" solo lista deudas sin padre — resuelto automáticamente sin tocar ese archivo, ya que `useDebts()` ahora usa `listDebtsResolved()` (solo padres/deudas sueltas; las hijas viven anidadas en `.children`)
+- [x] 16.9 `deudas.tsx`: hijas anidadas bajo su padre (badge de countdown o "indefinida", ✅ cuando una hija termina), acción "+ Agregar hija" con mini-formulario (nombre, pago mensual, ¿se termina? / meses restantes), sin botón de confirmar pago en las hijas; el padre muestra "Saldo estimado"/"Mensualidad (suma de hijas)" cuando tiene hijas, y elimina en cascada sus hijas al eliminarse
+- [x] 16.10 Verificación: `tsc --noEmit` limpio, 35/35 tests pasando (incluye 3 nuevos de integración para la cascada de `confirmPayment` con hijas mixtas countdown/indefinida, usando sql.js en memoria — `confirmPayment` ahora acepta un `Database` inyectable, igual que `reconciliation.ts`, para permitir esto sin tocar el singleton real), `expo export --platform android` compila sin errores

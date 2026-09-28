@@ -25,6 +25,13 @@ interface DebtFormValues {
   startDate: string;
 }
 
+interface ChildDebtFormValues {
+  name: string;
+  monthlyPayment: string;
+  isIndefinite: 'si' | 'no';
+  remainingPayments: string;
+}
+
 const today = () => new Date().toISOString().slice(0, 10);
 
 function NewDebtForm({ onSubmit }: { onSubmit: (values: DebtFormValues) => Promise<void> }) {
@@ -51,6 +58,10 @@ function NewDebtForm({ onSubmit }: { onSubmit: (values: DebtFormValues) => Promi
   return (
     <Card style={{ gap: Spacing.two }}>
       <ThemedText type="smallBold">Nueva deuda</ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        Si es una tarjeta de crédito con varias cositas adentro (MSI, suscripciones), regístrala
+        aquí primero y luego agrégale "hijas" desde su tarjeta.
+      </ThemedText>
       <Controller
         control={control}
         name="name"
@@ -136,10 +147,77 @@ function NewDebtForm({ onSubmit }: { onSubmit: (values: DebtFormValues) => Promi
   );
 }
 
+function NewChildDebtForm({ onSubmit }: { onSubmit: (values: ChildDebtFormValues) => Promise<void> }) {
+  const { control, handleSubmit, watch, reset } = useForm<ChildDebtFormValues>({
+    defaultValues: { name: '', monthlyPayment: '', isIndefinite: 'no', remainingPayments: '' },
+  });
+  const isIndefinite = watch('isIndefinite') === 'si';
+
+  const submit = handleSubmit(async (values) => {
+    await onSubmit(values);
+    reset();
+  });
+
+  return (
+    <Card style={{ gap: Spacing.two, marginLeft: Spacing.four }}>
+      <ThemedText type="smallBold">Nueva hija</ThemedText>
+      <Controller
+        control={control}
+        name="name"
+        render={({ field }) => (
+          <FormField label="Nombre" placeholder="Llantas, TV, Netflix..." value={field.value} onChangeText={field.onChange} />
+        )}
+      />
+      <Controller
+        control={control}
+        name="monthlyPayment"
+        render={({ field }) => (
+          <FormField label="Pago mensual" keyboardType="decimal-pad" value={field.value} onChangeText={field.onChange} />
+        )}
+      />
+      <Controller
+        control={control}
+        name="isIndefinite"
+        render={({ field }) => (
+          <ChipSelect
+            label="¿Se termina algún día?"
+            value={field.value}
+            onChange={field.onChange}
+            options={[
+              { label: 'Sí, tiene meses contados (MSI)', value: 'no' },
+              { label: 'No, es indefinida (suscripción)', value: 'si' },
+            ]}
+          />
+        )}
+      />
+      {!isIndefinite && (
+        <Controller
+          control={control}
+          name="remainingPayments"
+          render={({ field }) => (
+            <FormField
+              label="Meses restantes"
+              keyboardType="number-pad"
+              value={field.value}
+              onChangeText={field.onChange}
+            />
+          )}
+        />
+      )}
+      <Pressable onPress={submit}>
+        <Card style={{ alignItems: 'center' }}>
+          <ThemedText type="smallBold">Guardar hija</ThemedText>
+        </Card>
+      </Pressable>
+    </Card>
+  );
+}
+
 export default function DeudasScreen() {
-  const { debts, create, remove, confirmPayment } = useDebts();
+  const { debts, create, createChild, remove, confirmPayment } = useDebts();
   const { accounts } = useAccounts();
   const [showForm, setShowForm] = useState(false);
+  const [childFormForDebtId, setChildFormForDebtId] = useState<number | null>(null);
 
   return (
     <ScreenContainer>
@@ -186,45 +264,98 @@ export default function DeudasScreen() {
       {debts.length === 0 ? (
         <EmptyState message="Sin deudas registradas." />
       ) : (
-        debts.map((debt) => (
-          <Card key={debt.id} style={{ gap: Spacing.two }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <ThemedText type="smallBold">{debt.name}</ThemedText>
-              <Pressable
-                onPress={() =>
-                  Alert.alert('Eliminar deuda', `¿Eliminar "${debt.name}"? Esto no se puede deshacer.`, [
-                    { text: 'Cancelar', style: 'cancel' },
-                    { text: 'Eliminar', style: 'destructive', onPress: () => remove(debt.id) },
-                  ])
-                }
-              >
-                <ThemedText themeColor="critical">✕</ThemedText>
-              </Pressable>
-            </View>
-            <ThemedText type="small" themeColor="textSecondary">
-              Saldo pendiente: {formatCents(debt.saldoPendienteCents)} · Mensualidad:{' '}
-              {formatCents(debt.monthlyPaymentCents)}
-              {debt.remainingPayments != null ? ` · ${debt.remainingPayments} pagos restantes` : ''}
-              {debt.dueDate ? ` · paga el día ${debt.dueDate}` : ' · sin pago automático configurado'}
-            </ThemedText>
-
-            {debt.payments
-              .filter((p) => p.status === 'scheduled')
-              .map((p) => (
-                <View
-                  key={p.id}
-                  style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+        debts.map((debt) => {
+          const hasChildren = debt.children.length > 0;
+          return (
+            <Card key={debt.id} style={{ gap: Spacing.two }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <ThemedText type="smallBold">{debt.name}</ThemedText>
+                <Pressable
+                  onPress={() =>
+                    Alert.alert(
+                      'Eliminar deuda',
+                      hasChildren
+                        ? `¿Eliminar "${debt.name}" y todas sus hijas? Esto no se puede deshacer.`
+                        : `¿Eliminar "${debt.name}"? Esto no se puede deshacer.`,
+                      [
+                        { text: 'Cancelar', style: 'cancel' },
+                        { text: 'Eliminar', style: 'destructive', onPress: () => remove(debt.id) },
+                      ],
+                    )
+                  }
                 >
-                  <ThemedText type="small">
-                    {p.occurrenceDate} · {formatCents(p.amountCents)}
-                  </ThemedText>
-                  <Pressable onPress={() => confirmPayment(p.id, accounts[0]?.id)}>
-                    <ThemedText type="linkPrimary">Confirmar pago</ThemedText>
-                  </Pressable>
+                  <ThemedText themeColor="critical">✕</ThemedText>
+                </Pressable>
+              </View>
+              <ThemedText type="small" themeColor="textSecondary">
+                {hasChildren ? 'Saldo estimado' : 'Saldo pendiente'}: {formatCents(debt.saldoPendienteCents)} ·{' '}
+                {hasChildren ? 'Mensualidad (suma de hijas)' : 'Mensualidad'}: {formatCents(debt.monthlyPaymentCents)}
+                {!hasChildren && debt.remainingPayments != null ? ` · ${debt.remainingPayments} pagos restantes` : ''}
+                {debt.dueDate ? ` · paga el día ${debt.dueDate}` : ' · sin pago automático configurado'}
+              </ThemedText>
+
+              {hasChildren && (
+                <View style={{ gap: Spacing.one, marginLeft: Spacing.three }}>
+                  {debt.children.map((child) => (
+                    <View key={child.id} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <ThemedText type="small" themeColor={child.status === 'pagada' ? 'textSecondary' : 'text'}>
+                        {child.status === 'pagada' ? '✅ ' : '· '}
+                        {child.name}
+                        {child.remainingPayments != null
+                          ? ` (${child.remainingPayments} meses restantes)`
+                          : ' (indefinida)'}
+                      </ThemedText>
+                      <ThemedText type="small" themeColor="debt">
+                        {formatCents(child.monthlyPaymentCents)}
+                      </ThemedText>
+                    </View>
+                  ))}
                 </View>
-              ))}
-          </Card>
-        ))
+              )}
+
+              <Pressable
+                onPress={() => setChildFormForDebtId((current) => (current === debt.id ? null : debt.id))}
+              >
+                <ThemedText type="linkPrimary">
+                  {childFormForDebtId === debt.id ? 'Cancelar' : '+ Agregar hija'}
+                </ThemedText>
+              </Pressable>
+
+              {childFormForDebtId === debt.id && (
+                <NewChildDebtForm
+                  onSubmit={async (values) => {
+                    await createChild({
+                      parentDebtId: debt.id,
+                      name: values.name,
+                      debtType: 'msi',
+                      monthlyPaymentCents: toCents(Number(values.monthlyPayment)),
+                      remainingPayments:
+                        values.isIndefinite === 'si' ? null : Number(values.remainingPayments) || 0,
+                      startDate: today(),
+                    });
+                    setChildFormForDebtId(null);
+                  }}
+                />
+              )}
+
+              {debt.payments
+                .filter((p) => p.status === 'scheduled')
+                .map((p) => (
+                  <View
+                    key={p.id}
+                    style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+                  >
+                    <ThemedText type="small">
+                      {p.occurrenceDate} · {formatCents(p.amountCents)}
+                    </ThemedText>
+                    <Pressable onPress={() => confirmPayment(p.id, accounts[0]?.id)}>
+                      <ThemedText type="linkPrimary">Confirmar pago</ThemedText>
+                    </Pressable>
+                  </View>
+                ))}
+            </Card>
+          );
+        })
       )}
     </ScreenContainer>
   );

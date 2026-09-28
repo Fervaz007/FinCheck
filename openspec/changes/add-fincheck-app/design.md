@@ -74,6 +74,47 @@ Se investigaron límites reales de plataforma (no se asumen):
 
 _(Nota: notificaciones es una capacidad fuera de alcance de este cambio; esta investigación queda documentada aquí para cuando se implemente.)_
 
+### 11. Deudas con jerarquía padre/hija: el padre es 100% derivado, las hijas solo cuentan meses
+Una deuda puede tener un `parent_debt_id` (auto-referencia nullable en `debts`). Caso real: una tarjeta de crédito (BBVA) es la deuda padre; cada compra a meses (MSI) o cargo recurrente cobrado a esa tarjeta (Netflix) es una deuda hija.
+
+```
+BBVA (padre)                                    Llantas (hija, con countdown)
+  status: activa                                  remaining_payments: 12 → cuenta regresiva
+  due_date: "25" (ÚNICA fecha de pago — todas       monthly_payment_cents: 30000
+            las hijas se pagan en esa fecha,      TV (hija, con countdown)
+            ninguna tiene fecha propia)             remaining_payments: 3
+  monthly_payment_cents  ← DERIVADO:              Netflix (hija, SIN countdown)
+     Σ (hijas activas).monthly_payment_cents        remaining_payments: NULL → indefinida,
+  saldo_pendiente_cents  ← DERIVADO:                 activa hasta que el usuario la desactive
+     Σ (hijas con countdown).
+       (monthly_payment_cents × remaining_payments)
+```
+
+**Por qué el saldo pendiente del padre es una estimación derivada y no una suma de saldos reales de cada hija**: el usuario explícitamente no quiere (ni recordar ni buscar) cuánto costó originalmente cada MSI. Pedirle `original_amount_cents`/`saldo_pendiente_cents` por hija habría sido fricción sin valor real para él. En vez de eso, el saldo de una hija con countdown se **estima** como `monthly_payment_cents × remaining_payments` (sin intereses) — usa solo datos que el usuario ya conoce de memoria (pago mensual, meses restantes). Para hijas sin countdown (indefinidas, tipo suscripción) no existe la noción de "saldo pendiente" — son perpetuas hasta desactivarse manualmente.
+
+**Por qué Netflix es una deuda hija y no un egreso recurrente aparte**: se decidió explícitamente así, aunque no tenga countdown — porque se cobra automáticamente a la tarjeta BBVA y el usuario quiere que todo lo que compone "lo que debo de BBVA" viva junto, en un solo lugar, y no como un egreso independiente que restaría por separado de su disponible. Que sea "hija" en este modelo no exige que tenga fin — solo exige que contribuye al total mensual del padre y se desactiva manualmente si se cancela.
+
+**Confirmar el pago del padre — qué le pasa a cada hija**:
+```
+Confirmar pago BBVA (padre)
+        │
+        ├─► Hija CON countdown (Llantas, TV): remaining_payments -= 1 ÚNICAMENTE
+        │        (nada de restar montos en dólares — el saldo ya se deriva de
+        │         remaining_payments, así que decrementar el contador ya
+        │         "baja" el saldo estimado automáticamente)
+        │        → si remaining_payments llega a 0, status = 'pagada'
+        │        → el padre deja de sumarla el próximo ciclo, sin edición manual
+        │
+        └─► Hija SIN countdown (Netflix): no se toca — sigue activa indefinidamente
+```
+
+**Reglas de la jerarquía**:
+- Solo un nivel (una hija no puede tener sus propias hijas).
+- Las hijas NUNCA tienen su propio `due_date`, su propia recurrencia de pago (`recurring_transactions` de tipo `debt_payment`), ni sus propias filas en `debt_payments` — solo el padre tiene eso. Pagar es un evento único a nivel padre.
+- Las hijas no piden `original_amount_cents` ni `saldo_pendiente_cents` en el formulario — se autocompletan por detrás (ej. igual al pago mensual) únicamente para satisfacer la columna NOT NULL existente; no se muestran ni se usan para nada.
+- El selector "vincular a una deuda" de `commitments` solo debe listar deudas **sin padre** (`parent_debt_id IS NULL`) — el reparto por quincena siempre se calcula sobre el total del padre, nunca sobre una hija suelta.
+- Una deuda sin hijas se comporta exactamente igual que hoy (100% retrocompatible): sus propios `monthly_payment_cents`/`saldo_pendiente_cents` almacenados siguen siendo la fuente de verdad si no tiene ninguna hija.
+
 ## Risks / Trade-offs
 
 - **[Riesgo]** Cierre prolongado (meses) genera muchas ocurrencias de golpe en la primera apertura → **[Mitigación]** la reconciliación no tiene límite artificial de rango, pero se recomienda un aviso de UI si el número de ocurrencias generadas en una sola pasada es inusualmente alto, para que el usuario lo revise antes de continuar.
@@ -81,6 +122,7 @@ _(Nota: notificaciones es una capacidad fuera de alcance de este cambio; esta in
 - **[Riesgo]** Un pago de deuda `scheduled` sin confirmar puede acumularse indefinidamente si el usuario nunca confirma → **[Mitigación]** el dashboard debe destacar pagos vencidos sin confirmar como acción pendiente visible, no silenciarlos.
 - **[Riesgo]** Drizzle + expo-sqlite es una combinación relativamente joven en el ecosistema Expo → **[Mitigación]** confirmar compatibilidad de versiones antes de fijar dependencias en `package.json` durante implementación.
 - **[Trade-off]** No vincular cuentas de tipo tarjeta de crédito con su deuda correspondiente simplifica el modelo de datos ahora, a costa de que el usuario deba actualizar el saldo de la deuda manualmente o vía pagos confirmados — aceptado para v1.
+- **[Trade-off]** El `saldo_pendiente` derivado de una deuda hija (`monthly_payment × remaining_payments`) es una estimación sin intereses, no el saldo real del banco — aceptado explícitamente por el usuario a cambio de no tener que buscar/recordar montos originales por cada MSI.
 
 ## Migration Plan
 

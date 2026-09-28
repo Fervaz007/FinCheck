@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 const createdAt = () =>
@@ -46,6 +47,8 @@ export const budgetRuleAllocations = sqliteTable('budget_rule_allocations', {
 export const debts = sqliteTable('debts', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
+  // One level deep only: a child (parentDebtId set) never has children of its own.
+  parentDebtId: integer('parent_debt_id').references((): AnySQLiteColumn => debts.id),
   debtType: text('debt_type').notNull(),
   originalAmountCents: integer('original_amount_cents').notNull(),
   saldoPendienteCents: integer('saldo_pendiente_cents').notNull(),
@@ -203,3 +206,20 @@ export const monthlySummaries = sqliteTable(
   },
   (table) => [uniqueIndex('monthly_summaries_year_month').on(table.year, table.month)],
 );
+
+export const commitments = sqliteTable('commitments', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  // Only used when NOT linked below — a linked commitment always reads the
+  // live amount from the debt/recurring transaction it points to, so the
+  // user never has to enter the same number twice.
+  totalAmountCents: integer('total_amount_cents'),
+  linkedDebtId: integer('linked_debt_id').references(() => debts.id),
+  linkedRecurringTransactionId: integer('linked_recurring_transaction_id').references(
+    () => recurringTransactions.id,
+  ),
+  periodsToSpread: integer('periods_to_spread').notNull(),
+  accumulatedCents: integer('accumulated_cents').notNull().default(0),
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  createdAt: createdAt(),
+});

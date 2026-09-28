@@ -1,0 +1,1 @@
+ALTER TABLE `debts` ADD `parent_debt_id` integer REFERENCES debts(id);

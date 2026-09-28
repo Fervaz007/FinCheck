@@ -8,10 +8,10 @@ import { ThemedText } from '@/components/themed-text';
 import { useBudgetRules } from '@/hooks/useBudgetRules';
 import { useDashboardSummary } from '@/hooks/useDashboardSummary';
 import { useDebtLimit } from '@/hooks/useDebtLimit';
-import { computeBudgetCompliance } from '@/services/financial/budget';
+import { computeAllocationForAmount, computeBudgetCompliance } from '@/services/financial/budget';
 import { computeDebtCapacity } from '@/services/financial/debtLimit';
 import { Spacing } from '@/theme';
-import { formatCents } from '@/utils/money';
+import { formatCents, toCents } from '@/utils/money';
 
 const PRESETS = [
   { name: '50/30/20', allocations: [
@@ -31,6 +31,12 @@ export default function PresupuestoScreen() {
   const { debtLimitPct, setDebtLimitPct } = useDebtLimit();
   const { summary } = useDashboardSummary();
   const [debtLimitInput, setDebtLimitInput] = useState(String(debtLimitPct));
+  const [paycheckInput, setPaycheckInput] = useState('');
+
+  const paycheckBreakdown =
+    activeRule && Number(paycheckInput) > 0
+      ? computeAllocationForAmount(activeRule.allocations, toCents(Number(paycheckInput)))
+      : [];
 
   const compliance =
     activeRule && summary
@@ -79,6 +85,30 @@ export default function PresupuestoScreen() {
           ))}
         </View>
       </Card>
+
+      {activeRule && (
+        <Card style={{ gap: Spacing.two }}>
+          <ThemedText type="smallBold">¿Cuánto separar de este ingreso?</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            Ingresa el monto de tu quincena (o cualquier ingreso) y mira cuánto le toca a cada grupo
+            de tu regla activa ({activeRule.name}).
+          </ThemedText>
+          <FormField
+            label="Monto del ingreso"
+            keyboardType="decimal-pad"
+            value={paycheckInput}
+            onChangeText={setPaycheckInput}
+          />
+          {paycheckBreakdown.map((row) => (
+            <View key={row.label} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <ThemedText themeColor="textSecondary">
+                {row.label} ({row.percentage}%)
+              </ThemedText>
+              <ThemedText type="smallBold">{formatCents(row.amountCents)}</ThemedText>
+            </View>
+          ))}
+        </Card>
+      )}
 
       {compliance.length > 0 && (
         <Card style={{ gap: Spacing.one }}>

@@ -48,6 +48,10 @@ export default function DrawerLayout() {
         options={{ title: 'Presupuesto', drawerIcon: drawerIcon('pie-chart-outline') }}
       />
       <Drawer.Screen
+        name="compromisos"
+        options={{ title: 'Compromisos', drawerIcon: drawerIcon('flag-outline') }}
+      />
+      <Drawer.Screen
         name="simulador"
         options={{ title: 'Simulador', drawerIcon: drawerIcon('calculator-outline') }}
       />

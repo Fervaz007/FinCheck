@@ -13,6 +13,9 @@ FinCheck no existe todavía: no hay forma de registrar ingresos, egresos y deuda
 - Dashboard principal (dark, estilo fintech) con resumen del mes, indicador de salud financiera, y navegación inferior (Inicio, Movimientos, Deudas, Presupuesto, Más).
 - Simulador general de nuevas compras/deudas (no limitado a autos): compara "situación actual" vs. "con nueva compra" en montos y porcentajes, contra el límite de endeudamiento configurado.
 - Historial mensual navegable basado en `monthly_summaries`.
+- Recurrentes: pantalla para dar de alta ingresos/egresos recurrentes (quincenal, semanal, mensual, cada N días/meses, anual) sobre el motor de recurrencias.
+- Pago automático de deudas: al registrar una deuda, configuración opcional de día de pago + cuenta que crea una recurrencia de tipo `debt_payment`; confirmar un pago decrementa `remaining_payments` y marca la deuda `pagada` al llegar a $0.
+- Compromisos: reparto manual de obligaciones conocidas (una deuda mensual, un recibo bimestral) entre los periodos de pago del usuario (ej. quincenas), restado del ingreso global — no de una cuenta específica — para mostrar el disponible real antes de gastar.
 
 **Fuera de alcance de este cambio** (quedan para cambios futuros, según el plan de fases original): metas de ahorro, gráficas, notificaciones locales de recordatorio, backup/restore, y seguridad biométrica/PIN. El motor de recurrencias sí se incluye aquí porque los campos de frecuencia son parte del modelo de datos desde el día uno de ingresos/egresos/deudas.
 
@@ -31,6 +34,7 @@ FinCheck no existe todavía: no hay forma de registrar ingresos, egresos y deuda
 - `dashboard`: pantalla principal con resumen del mes y salud financiera.
 - `purchase-simulator`: simulación general de nuevas compras/deudas con comparación antes/después.
 - `monthly-history`: historial mensual navegable de resúmenes financieros.
+- `commitments`: reparto de obligaciones conocidas (deudas, recibos periódicos) entre los periodos de pago del usuario, con seguimiento de progreso y cálculo de disponible real ajustado.
 
 ### Modified Capabilities
 _(ninguna — proyecto nuevo, sin specs existentes)_

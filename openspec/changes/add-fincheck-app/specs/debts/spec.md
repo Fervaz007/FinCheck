@@ -42,3 +42,39 @@ The system SHALL treat a debt's configured `monthly_payment` (the obligation) as
 #### Scenario: Unconfirmed payment does not count as cash flow
 - **WHEN** computing the month's total egresos and a debt payment for that month remains `scheduled`
 - **THEN** the system SHALL exclude that payment's amount from the month's egresos total until it is `confirmed`
+
+### Requirement: A debt can group child debts under one parent
+The system SHALL allow a debt to reference another debt as its parent (`parent_debt_id`), one level deep only (a child SHALL NOT itself have children). A parent debt's `monthly_payment` SHALL be derived as the sum of its active children's `monthly_payment`, rather than manually entered. A debt with no children SHALL behave exactly as an ungrouped debt, using its own stored `monthly_payment`/`saldo_pendiente`.
+
+#### Scenario: Parent's monthly payment is the sum of active children
+- **WHEN** debt "BBVA" has active children "Llantas" ($300/month), "TV" ($200/month), and "Netflix" ($200/month)
+- **THEN** the system SHALL derive BBVA's monthly payment as $700, not a manually stored number
+
+#### Scenario: A finished child stops contributing automatically
+- **WHEN** child "TV" reaches `remaining_payments = 0` and its status becomes `pagada`
+- **THEN** the parent's derived monthly payment SHALL drop by TV's amount on the next computation, with no manual edit required
+
+### Requirement: Child debts may be indefinite (no payment countdown)
+A child debt MAY have `remaining_payments = NULL`, meaning it recurs indefinitely (e.g. a subscription charged to the same card) and remains active until the user manually deactivates it. Indefinite children SHALL still contribute to the parent's derived monthly payment, but SHALL NOT contribute to the parent's derived `saldo_pendiente` (which has no meaning for a perpetual charge).
+
+#### Scenario: Indefinite child keeps recurring
+- **WHEN** child "Netflix" has `remaining_payments = NULL`
+- **THEN** it SHALL keep contributing to the parent's monthly total every cycle until the user deactivates it, and confirming the parent's payment SHALL NOT change it
+
+### Requirement: A child debt's outstanding balance is estimated, not entered
+For a child debt with a payment countdown, the system SHALL derive its `saldo_pendiente` as `monthly_payment × remaining_payments` (a no-interest estimate) instead of requiring the user to enter or track an exact original amount or outstanding balance. Child debt forms SHALL NOT ask the user for `original_amount`/`saldo_pendiente`.
+
+#### Scenario: Estimated balance from payment and remaining months
+- **WHEN** child "Llantas" has `monthly_payment = $300` and `remaining_payments = 12`
+- **THEN** the system SHALL derive its `saldo_pendiente` as $3,600, without the user ever entering that figure
+
+### Requirement: Only the parent debt has a payment schedule and lifecycle
+Child debts SHALL NOT have their own `due_date`, their own `debt_payment`-kind recurring transaction, or their own `debt_payments` rows — only the parent debt does. Confirming the parent's scheduled payment SHALL cascade to its active children: a child with a payment countdown SHALL have `remaining_payments` decremented by one (and no dollar amount subtracted from it, since its balance is derived from the countdown); a child marked `pagada` (countdown reaching zero) SHALL stop being included in future computations; an indefinite child SHALL be left unchanged.
+
+#### Scenario: Confirming the parent's payment decrements children's countdowns only
+- **WHEN** the user confirms BBVA's (parent) scheduled payment for this cycle
+- **THEN** each active child with a countdown SHALL have `remaining_payments` reduced by one, any child reaching zero SHALL become `pagada`, and no child's `saldo_pendiente` SHALL be directly decremented by a dollar amount (it is derived, not stored)
+
+#### Scenario: Children never generate their own scheduled payments
+- **WHEN** reconciliation runs
+- **THEN** it SHALL only ever generate `scheduled` debt payments for parent-level debts (or ungrouped debts), never for a debt that has a `parent_debt_id`

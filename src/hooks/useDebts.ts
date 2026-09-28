@@ -1,13 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { confirmPayment, deriveStatus, listPaymentsForDebt } from '@/dao/debtPaymentsDao';
-import { createDebt, deleteDebt, listDebts, updateDebt } from '@/dao/debtsDao';
+import {
+  createChildDebt,
+  createDebt,
+  deleteDebt,
+  listDebtsResolved,
+  updateDebt,
+  type NewChildDebt,
+  type ResolvedDebt,
+} from '@/dao/debtsDao';
 import { createRecurringTransaction } from '@/dao/recurringTransactionsDao';
 import { db } from '@/db/client';
-import type { Debt, NewDebt } from '@/models';
+import type { NewDebt } from '@/models';
 import { runReconciliation } from '@/services/recurring/reconciliation';
 
-export interface DebtWithPayments extends Debt {
+export interface DebtWithPayments extends ResolvedDebt {
   payments: Awaited<ReturnType<typeof listPaymentsForDebt>>;
 }
 
@@ -18,7 +26,7 @@ export function useDebts() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const rows = await listDebts();
+      const rows = await listDebtsResolved();
       const withPayments = await Promise.all(
         rows.map(async (debt) => ({ ...debt, payments: await listPaymentsForDebt(debt.id) })),
       );
@@ -38,10 +46,7 @@ export function useDebts() {
     debts,
     loading,
     refresh,
-    create: async (
-      input: NewDebt,
-      autoPayment?: { paymentDay: number; accountId: number },
-    ) => {
+    create: async (input: NewDebt, autoPayment?: { paymentDay: number; accountId: number }) => {
       const debt = await createDebt(input);
       if (autoPayment) {
         await createRecurringTransaction({
@@ -57,6 +62,10 @@ export function useDebts() {
         // Materialize this month's payment right away if the day already passed.
         await runReconciliation(db, new Date());
       }
+      await refresh();
+    },
+    createChild: async (input: NewChildDebt) => {
+      await createChildDebt(input);
       await refresh();
     },
     update: async (id: number, input: Partial<NewDebt>) => {

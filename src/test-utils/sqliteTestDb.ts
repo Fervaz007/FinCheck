@@ -24,6 +24,7 @@ CREATE TABLE categories (
 CREATE TABLE debts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
+  parent_debt_id INTEGER REFERENCES debts(id),
   debt_type TEXT NOT NULL,
   original_amount_cents INTEGER NOT NULL,
   saldo_pendiente_cents INTEGER NOT NULL,

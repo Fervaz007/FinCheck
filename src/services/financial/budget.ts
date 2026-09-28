@@ -20,6 +20,28 @@ export interface BudgetComplianceRow {
   withinBudget: boolean;
 }
 
+export interface AllocationForAmount {
+  label: string;
+  percentage: number;
+  amountCents: number;
+}
+
+/**
+ * Splits a single amount (e.g. one paycheck) across the active budget rule's
+ * groups. Prospective — "how much to set aside now" — as opposed to
+ * `computeBudgetCompliance`, which is retrospective over a whole month.
+ */
+export function computeAllocationForAmount(
+  allocations: BudgetAllocation[],
+  totalAmountCents: number,
+): AllocationForAmount[] {
+  return allocations.map((allocation) => ({
+    label: allocation.label,
+    percentage: allocation.percentage,
+    amountCents: Math.round((totalAmountCents * allocation.percentage) / 100),
+  }));
+}
+
 export function computeBudgetCompliance(
   allocations: BudgetAllocation[],
   actualByGroup: Record<string, number>,

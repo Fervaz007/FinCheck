@@ -1,4 +1,4 @@
-import { computeBudgetCompliance, validateAllocationsSumTo100 } from '../budget';
+import { computeAllocationForAmount, computeBudgetCompliance, validateAllocationsSumTo100 } from '../budget';
 
 describe('validateAllocationsSumTo100', () => {
   it('accepts a rule summing to 100%', () => {
@@ -19,6 +19,26 @@ describe('validateAllocationsSumTo100', () => {
     ]);
     expect(result.valid).toBe(false);
     expect(result.sum).toBe(95);
+  });
+});
+
+describe('computeAllocationForAmount', () => {
+  it('splits a single paycheck across the rule (45/25/20/10 on $9,800)', () => {
+    const rows = computeAllocationForAmount(
+      [
+        { label: 'necesidades', percentage: 45 },
+        { label: 'deudas', percentage: 25 },
+        { label: 'ahorro', percentage: 20 },
+        { label: 'ocio', percentage: 10 },
+      ],
+      980_000,
+    );
+    expect(rows).toEqual([
+      { label: 'necesidades', percentage: 45, amountCents: 441_000 },
+      { label: 'deudas', percentage: 25, amountCents: 245_000 },
+      { label: 'ahorro', percentage: 20, amountCents: 196_000 },
+      { label: 'ocio', percentage: 10, amountCents: 98_000 },
+    ]);
   });
 });
 

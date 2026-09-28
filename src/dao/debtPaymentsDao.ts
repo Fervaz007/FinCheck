@@ -1,6 +1,6 @@
 import { and, eq, gte, lte } from 'drizzle-orm';
 
-import { db } from '@/db/client';
+import { db, type Database } from '@/db/client';
 import { debtPayments, debts } from '@/db/schema';
 import { formatOccurrenceDate } from '@/services/recurring/reconciliation';
 import { parseISODate } from '@/utils/date';
@@ -43,8 +43,9 @@ export async function listConfirmedPaymentsForMonth(year: number, month: number)
     );
 }
 
-export async function confirmPayment(paymentId: number, accountId?: number) {
-  await db.transaction(async (tx) => {
+/** `database` defaults to the app singleton; overridable so tests can pass an in-memory db. */
+export async function confirmPayment(paymentId: number, accountId?: number, database: Database = db) {
+  await database.transaction(async (tx) => {
     const [payment] = await tx.select().from(debtPayments).where(eq(debtPayments.id, paymentId));
     if (!payment || payment.status === 'confirmed') return;
 
@@ -60,17 +61,46 @@ export async function confirmPayment(paymentId: number, accountId?: number) {
       })
       .where(eq(debtPayments.id, paymentId));
 
-    const newSaldoPendienteCents = Math.max(0, debt.saldoPendienteCents - payment.amountCents);
-    const newRemainingPayments =
-      debt.remainingPayments != null ? Math.max(0, debt.remainingPayments - 1) : null;
+    const children = await tx.select().from(debts).where(eq(debts.parentDebtId, debt.id));
 
-    await tx
-      .update(debts)
-      .set({
-        saldoPendienteCents: newSaldoPendienteCents,
-        remainingPayments: newRemainingPayments,
-        status: newSaldoPendienteCents === 0 ? 'pagada' : debt.status,
-      })
-      .where(eq(debts.id, debt.id));
+    if (children.length > 0) {
+      // Parent debt: cascade to active children — only decrement the month
+      // countdown, never a dollar amount (their balance is derived, not stored).
+      // Indefinite children (no countdown) are left untouched.
+      let allFinished = true;
+      for (const child of children) {
+        if (child.status !== 'activa') continue;
+        if (child.remainingPayments == null) {
+          allFinished = false;
+          continue;
+        }
+        const newRemaining = Math.max(0, child.remainingPayments - 1);
+        await tx
+          .update(debts)
+          .set({
+            remainingPayments: newRemaining,
+            status: newRemaining === 0 ? 'pagada' : 'activa',
+          })
+          .where(eq(debts.id, child.id));
+        if (newRemaining > 0) allFinished = false;
+      }
+      if (allFinished) {
+        await tx.update(debts).set({ status: 'pagada' }).where(eq(debts.id, debt.id));
+      }
+    } else {
+      // Ungrouped debt: unchanged behavior from before the hierarchy feature.
+      const newSaldoPendienteCents = Math.max(0, debt.saldoPendienteCents - payment.amountCents);
+      const newRemainingPayments =
+        debt.remainingPayments != null ? Math.max(0, debt.remainingPayments - 1) : null;
+
+      await tx
+        .update(debts)
+        .set({
+          saldoPendienteCents: newSaldoPendienteCents,
+          remainingPayments: newRemainingPayments,
+          status: newSaldoPendienteCents === 0 ? 'pagada' : debt.status,
+        })
+        .where(eq(debts.id, debt.id));
+    }
   });
 }

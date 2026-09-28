@@ -4,6 +4,7 @@ import { desc, eq } from 'drizzle-orm';
 import type { Database } from '@/db/client';
 import {
   debtPayments,
+  debts,
   expenses,
   income,
   recurrenceOccurrences,
@@ -11,6 +12,7 @@ import {
   settings,
 } from '@/db/schema';
 
+import { deriveParentMonthlyPaymentCents } from '@/services/financial/debtHierarchy';
 import { parseISODate } from '@/utils/date';
 
 import { computeOccurrences } from './computeOccurrences';
@@ -49,6 +51,18 @@ export async function runReconciliation(db: Database, today: Date): Promise<void
 
       const occurrences = computeOccurrences(config, anchor, from, today);
 
+      // Resolved once per recurring transaction, not per occurrence: a parent
+      // debt's monthly obligation is derived from its active children, so the
+      // scheduled amount must reflect today's total, not whatever was stored
+      // on the recurring transaction when it was first set up.
+      let debtPaymentAmountCents = rt.amountCents;
+      if (rt.kind === 'debt_payment' && rt.debtId != null) {
+        const children = await tx.select().from(debts).where(eq(debts.parentDebtId, rt.debtId));
+        if (children.length > 0) {
+          debtPaymentAmountCents = deriveParentMonthlyPaymentCents(children);
+        }
+      }
+
       for (const occurrenceDate of occurrences) {
         const occurrenceDateStr = formatOccurrenceDate(occurrenceDate);
 
@@ -59,7 +73,7 @@ export async function runReconciliation(db: Database, today: Date): Promise<void
             .values({
               debtId: rt.debtId,
               accountId: rt.accountId,
-              amountCents: rt.amountCents,
+              amountCents: debtPaymentAmountCents,
               occurrenceDate: occurrenceDateStr,
               status: 'scheduled',
               recurringTransactionId: rt.id,
