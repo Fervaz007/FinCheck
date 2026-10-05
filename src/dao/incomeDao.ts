@@ -1,6 +1,6 @@
-import { and, eq, gte, lte } from 'drizzle-orm';
+import { and, eq, gte, lte, sql } from 'drizzle-orm';
 
-import { db } from '@/db/client';
+import { db, type Database } from '@/db/client';
 import { income } from '@/db/schema';
 import type { NewIncome } from '@/models';
 
@@ -14,6 +14,14 @@ function monthRange(year: number, month: number) {
 export async function listIncomeForMonth(year: number, month: number) {
   const { start, end } = monthRange(year, month);
   return db.select().from(income).where(and(gte(income.date, start), lte(income.date, end)));
+}
+
+/** All-time income total, across every month — feeds the global "Disponible". */
+export async function sumAllIncomeCents(database: Database = db): Promise<number> {
+  const [row] = await database
+    .select({ total: sql<number>`coalesce(sum(${income.amountCents}), 0)` })
+    .from(income);
+  return Number(row?.total ?? 0);
 }
 
 export async function createIncome(input: NewIncome) {

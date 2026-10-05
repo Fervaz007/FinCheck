@@ -1,0 +1,1 @@
+ALTER TABLE `debts` ADD `is_parent` integer DEFAULT false NOT NULL;

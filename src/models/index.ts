@@ -1,11 +1,5 @@
 import type * as schema from '@/db/schema';
 
-export type Account = typeof schema.accounts.$inferSelect;
-export type NewAccount = typeof schema.accounts.$inferInsert;
-
-export type Category = typeof schema.categories.$inferSelect;
-export type NewCategory = typeof schema.categories.$inferInsert;
-
 export type Income = typeof schema.income.$inferSelect;
 export type NewIncome = typeof schema.income.$inferInsert;
 

@@ -36,32 +36,20 @@ export default function DrawerLayout() {
         options={{ title: 'Movimientos', drawerIcon: drawerIcon('swap-horizontal-outline') }}
       />
       <Drawer.Screen
-        name="recurrentes"
-        options={{ title: 'Recurrentes', drawerIcon: drawerIcon('repeat-outline') }}
-      />
-      <Drawer.Screen
         name="deudas"
         options={{ title: 'Deudas', drawerIcon: drawerIcon('card-outline') }}
+      />
+      <Drawer.Screen
+        name="apartados"
+        options={{ title: 'Apartados', drawerIcon: drawerIcon('flag-outline') }}
       />
       <Drawer.Screen
         name="presupuesto"
         options={{ title: 'Presupuesto', drawerIcon: drawerIcon('pie-chart-outline') }}
       />
       <Drawer.Screen
-        name="compromisos"
-        options={{ title: 'Compromisos', drawerIcon: drawerIcon('flag-outline') }}
-      />
-      <Drawer.Screen
         name="simulador"
         options={{ title: 'Simulador', drawerIcon: drawerIcon('calculator-outline') }}
-      />
-      <Drawer.Screen
-        name="cuentas"
-        options={{ title: 'Cuentas', drawerIcon: drawerIcon('wallet-outline') }}
-      />
-      <Drawer.Screen
-        name="categorias"
-        options={{ title: 'Categorías', drawerIcon: drawerIcon('pricetags-outline') }}
       />
       <Drawer.Screen
         name="reglas-presupuestarias"

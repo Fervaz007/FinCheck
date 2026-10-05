@@ -7,26 +7,6 @@ const createdAt = () =>
     .notNull()
     .default(sql`(current_timestamp)`);
 
-export const accounts = sqliteTable('accounts', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  name: text('name').notNull(),
-  type: text('type', {
-    enum: ['efectivo', 'banco', 'tarjeta_debito', 'tarjeta_credito', 'otro'],
-  }).notNull(),
-  initialBalanceCents: integer('initial_balance_cents').notNull().default(0),
-  currency: text('currency').notNull().default('MXN'),
-  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
-  createdAt: createdAt(),
-});
-
-export const categories = sqliteTable('categories', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  name: text('name').notNull(),
-  movementType: text('movement_type', { enum: ['income', 'expense'] }).notNull(),
-  budgetGroup: text('budget_group').notNull(),
-  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
-});
-
 export const budgetRules = sqliteTable('budget_rules', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
@@ -42,6 +22,8 @@ export const budgetRuleAllocations = sqliteTable('budget_rule_allocations', {
     .references(() => budgetRules.id, { onDelete: 'cascade' }),
   label: text('label').notNull(),
   percentage: integer('percentage').notNull(),
+  // Any number of rows per rule can be monitored (including zero) — see design.md decision #1.
+  isMonitored: integer('is_monitored', { mode: 'boolean' }).notNull().default(false),
 });
 
 export const debts = sqliteTable('debts', {
@@ -49,6 +31,9 @@ export const debts = sqliteTable('debts', {
   name: text('name').notNull(),
   // One level deep only: a child (parentDebtId set) never has children of its own.
   parentDebtId: integer('parent_debt_id').references((): AnySQLiteColumn => debts.id),
+  // Persisted at creation from the "¿Padre o normal?" choice — not derivable
+  // from whether it currently has children (see design.md decision #10).
+  isParent: integer('is_parent', { mode: 'boolean' }).notNull().default(false),
   debtType: text('debt_type').notNull(),
   originalAmountCents: integer('original_amount_cents').notNull(),
   saldoPendienteCents: integer('saldo_pendiente_cents').notNull(),
@@ -61,6 +46,14 @@ export const debts = sqliteTable('debts', {
     .notNull()
     .default('activa'),
   notes: text('notes'),
+  // Text snapshot of an active budget rule allocation's label at the time
+  // this debt was created/edited — not a foreign key, so it survives the
+  // active rule being switched (see design.md decision #6).
+  budgetGroupLabel: text('budget_group_label'),
+  periodicity: text('periodicity', { enum: ['mensual', 'bimestral'] }),
+  isRecurring: integer('is_recurring', { mode: 'boolean' }).notNull().default(false),
+  reserveAccumulatedCents: integer('reserve_accumulated_cents').notNull().default(0),
+  reserveLastAccrualDate: text('reserve_last_accrual_date'),
   createdAt: createdAt(),
 });
 
@@ -68,8 +61,8 @@ export const recurringTransactions = sqliteTable('recurring_transactions', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   kind: text('kind', { enum: ['income', 'expense', 'debt_payment'] }).notNull(),
   description: text('description').notNull(),
-  categoryId: integer('category_id').references(() => categories.id),
-  accountId: integer('account_id').references(() => accounts.id),
+  // Purely descriptive free-text origin tag, only meaningful for kind='income'. See specs/income.
+  origin: text('origin'),
   debtId: integer('debt_id').references(() => debts.id),
   amountCents: integer('amount_cents').notNull(),
   recurrenceType: text('recurrence_type', {
@@ -94,10 +87,8 @@ export const recurringTransactions = sqliteTable('recurring_transactions', {
 export const income = sqliteTable('income', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   description: text('description').notNull(),
-  categoryId: integer('category_id').references(() => categories.id),
-  accountId: integer('account_id')
-    .notNull()
-    .references(() => accounts.id),
+  // Purely descriptive free-text origin — never read by any calculation. See specs/income.
+  origin: text('origin'),
   amountCents: integer('amount_cents').notNull(),
   date: text('date').notNull(),
   notes: text('notes'),
@@ -111,10 +102,6 @@ export const income = sqliteTable('income', {
 export const expenses = sqliteTable('expenses', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   description: text('description').notNull(),
-  categoryId: integer('category_id').references(() => categories.id),
-  accountId: integer('account_id')
-    .notNull()
-    .references(() => accounts.id),
   amountCents: integer('amount_cents').notNull(),
   date: text('date').notNull(),
   notes: text('notes'),
@@ -130,7 +117,6 @@ export const debtPayments = sqliteTable('debt_payments', {
   debtId: integer('debt_id')
     .notNull()
     .references(() => debts.id),
-  accountId: integer('account_id').references(() => accounts.id),
   amountCents: integer('amount_cents').notNull(),
   occurrenceDate: text('occurrence_date').notNull(),
   status: text('status', { enum: ['scheduled', 'confirmed'] })
@@ -168,7 +154,6 @@ export const recurrenceOccurrences = sqliteTable(
 
 export const settings = sqliteTable('settings', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  debtLimitPct: integer('debt_limit_pct').notNull().default(30),
   activeBudgetRuleId: integer('active_budget_rule_id').references(() => budgetRules.id),
   currency: text('currency').notNull().default('MXN'),
   lastReconciledAt: text('last_reconciled_at'),
@@ -206,20 +191,3 @@ export const monthlySummaries = sqliteTable(
   },
   (table) => [uniqueIndex('monthly_summaries_year_month').on(table.year, table.month)],
 );
-
-export const commitments = sqliteTable('commitments', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  name: text('name').notNull(),
-  // Only used when NOT linked below — a linked commitment always reads the
-  // live amount from the debt/recurring transaction it points to, so the
-  // user never has to enter the same number twice.
-  totalAmountCents: integer('total_amount_cents'),
-  linkedDebtId: integer('linked_debt_id').references(() => debts.id),
-  linkedRecurringTransactionId: integer('linked_recurring_transaction_id').references(
-    () => recurringTransactions.id,
-  ),
-  periodsToSpread: integer('periods_to_spread').notNull(),
-  accumulatedCents: integer('accumulated_cents').notNull().default(0),
-  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
-  createdAt: createdAt(),
-});

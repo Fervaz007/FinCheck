@@ -1,155 +1,57 @@
-import { useState } from 'react';
-import { Alert, Pressable, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import { Card } from '@/components/Card';
-import { FormField } from '@/components/FormField';
+import { EmptyState } from '@/components/EmptyState';
 import { ScreenContainer } from '@/components/ScreenContainer';
 import { ThemedText } from '@/components/themed-text';
 import { useBudgetRules } from '@/hooks/useBudgetRules';
-import { useDashboardSummary } from '@/hooks/useDashboardSummary';
-import { useDebtLimit } from '@/hooks/useDebtLimit';
-import { computeAllocationForAmount, computeBudgetCompliance } from '@/services/financial/budget';
-import { computeDebtCapacity } from '@/services/financial/debtLimit';
 import { Spacing } from '@/theme';
-import { formatCents, toCents } from '@/utils/money';
-
-const PRESETS = [
-  { name: '50/30/20', allocations: [
-    { label: 'necesidades', percentage: 50 },
-    { label: 'ocio', percentage: 30 },
-    { label: 'ahorro', percentage: 20 },
-  ] },
-  { name: '40/40/20', allocations: [
-    { label: 'necesidades', percentage: 40 },
-    { label: 'deudas', percentage: 40 },
-    { label: 'ahorro', percentage: 20 },
-  ] },
-];
 
 export default function PresupuestoScreen() {
-  const { rules, activeRule, create, activate } = useBudgetRules();
-  const { debtLimitPct, setDebtLimitPct } = useDebtLimit();
-  const { summary } = useDashboardSummary();
-  const [debtLimitInput, setDebtLimitInput] = useState(String(debtLimitPct));
-  const [paycheckInput, setPaycheckInput] = useState('');
-
-  const paycheckBreakdown =
-    activeRule && Number(paycheckInput) > 0
-      ? computeAllocationForAmount(activeRule.allocations, toCents(Number(paycheckInput)))
-      : [];
-
-  const compliance =
-    activeRule && summary
-      ? computeBudgetCompliance(
-          activeRule.allocations,
-          {
-            necesidades: summary.expenseTotalCents - summary.savingsTotalCents,
-            deudas: summary.debtPaymentTotalCents,
-            ahorro: summary.savingsTotalCents,
-            ocio: 0,
-          },
-          summary.incomeTotalCents,
-        )
-      : [];
-
-  const capacity = summary
-    ? computeDebtCapacity({
-        incomeCents: summary.incomeTotalCents,
-        currentDebtPaymentsCents: summary.debtPaymentTotalCents,
-        debtLimitPct,
-      })
-    : null;
+  const { rules, activate } = useBudgetRules();
 
   return (
     <ScreenContainer>
       <ThemedText type="title">Presupuesto</ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        Activa la regla que quieres seguir este mes. Puedes crear o editar reglas en "Reglas
+        presupuestarias". El cumplimiento por sección se ve en Inicio.
+      </ThemedText>
 
-      <Card style={{ gap: Spacing.two }}>
-        <ThemedText type="smallBold">Regla de presupuesto</ThemedText>
-        {rules.map((rule) => (
-          <Pressable key={rule.id} onPress={() => activate(rule.id)}>
-            <ThemedText themeColor={rule.isActive ? 'primary' : 'text'}>
-              {rule.isActive ? '● ' : '○ '}
-              {rule.name} ({rule.allocations.map((a) => `${a.label} ${a.percentage}%`).join(' / ')})
-            </ThemedText>
-          </Pressable>
-        ))}
-        <View style={{ flexDirection: 'row', gap: Spacing.two, flexWrap: 'wrap' }}>
-          {PRESETS.map((preset) => (
-            <Pressable
-              key={preset.name}
-              onPress={() => create(preset.name, preset.allocations, false)}
-            >
-              <ThemedText type="linkPrimary">+ Usar {preset.name}</ThemedText>
+      {rules.length === 0 ? (
+        <EmptyState message="Aún no has creado ninguna regla presupuestaria." />
+      ) : (
+        <View style={{ gap: Spacing.three }}>
+          {rules.map((rule) => (
+            <Pressable key={rule.id} onPress={() => activate(rule.id)}>
+              <Card style={{ gap: Spacing.two }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <ThemedText type="heading" themeColor={rule.isActive ? 'primary' : 'text'}>
+                    {rule.isActive ? '● ' : '○ '}
+                    {rule.name}
+                  </ThemedText>
+                  {!rule.isActive && (
+                    <ThemedText type="caption" themeColor="textSecondary">
+                      Tocar para activar
+                    </ThemedText>
+                  )}
+                </View>
+                <View style={{ gap: Spacing.one }}>
+                  {rule.allocations.map((a) => (
+                    <View key={a.id} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <ThemedText type="caption" themeColor="textSecondary">
+                        {a.label}
+                        {a.isMonitored ? ' (monitoreado)' : ''}
+                      </ThemedText>
+                      <ThemedText type="small">{a.percentage}%</ThemedText>
+                    </View>
+                  ))}
+                </View>
+              </Card>
             </Pressable>
           ))}
         </View>
-      </Card>
-
-      {activeRule && (
-        <Card style={{ gap: Spacing.two }}>
-          <ThemedText type="smallBold">¿Cuánto separar de este ingreso?</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            Ingresa el monto de tu quincena (o cualquier ingreso) y mira cuánto le toca a cada grupo
-            de tu regla activa ({activeRule.name}).
-          </ThemedText>
-          <FormField
-            label="Monto del ingreso"
-            keyboardType="decimal-pad"
-            value={paycheckInput}
-            onChangeText={setPaycheckInput}
-          />
-          {paycheckBreakdown.map((row) => (
-            <View key={row.label} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <ThemedText themeColor="textSecondary">
-                {row.label} ({row.percentage}%)
-              </ThemedText>
-              <ThemedText type="smallBold">{formatCents(row.amountCents)}</ThemedText>
-            </View>
-          ))}
-        </Card>
       )}
-
-      {compliance.length > 0 && (
-        <Card style={{ gap: Spacing.one }}>
-          <ThemedText type="smallBold">Cumplimiento este mes</ThemedText>
-          {compliance.map((row) => (
-            <View key={row.label} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <ThemedText themeColor="textSecondary">
-                {row.label} ({row.allocatedPct}%)
-              </ThemedText>
-              <ThemedText themeColor={row.withinBudget ? 'healthy' : 'critical'}>
-                {formatCents(row.actualCents)} / {formatCents(row.allocatedCents)}
-              </ThemedText>
-            </View>
-          ))}
-        </Card>
-      )}
-
-      <Card style={{ gap: Spacing.two }}>
-        <ThemedText type="smallBold">Límite de endeudamiento (independiente)</ThemedText>
-        <FormField
-          label="Límite (%)"
-          keyboardType="number-pad"
-          value={debtLimitInput}
-          onChangeText={setDebtLimitInput}
-          onBlur={() => {
-            const pct = Number(debtLimitInput);
-            if (Number.isFinite(pct) && pct > 0 && pct <= 100) setDebtLimitPct(pct);
-            else Alert.alert('Valor inválido', 'Ingresa un porcentaje entre 1 y 100.');
-          }}
-        />
-        {capacity && (
-          <>
-            <ThemedText type="small" themeColor="textSecondary">
-              Deuda actual: {capacity.currentRatioPct}% · Límite: {debtLimitPct}%
-            </ThemedText>
-            <ThemedText type="smallBold">
-              Disponible para nueva deuda: {formatCents(capacity.availableCapacityCents)}
-            </ThemedText>
-          </>
-        )}
-      </Card>
     </ScreenContainer>
   );
 }

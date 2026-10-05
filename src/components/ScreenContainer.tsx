@@ -15,7 +15,7 @@ export function ScreenContainer({
       <SafeAreaView style={{ flex: 1 }}>
         <ScrollView
           contentContainerStyle={[
-            { padding: Spacing.three, gap: Spacing.three, paddingBottom: Spacing.six },
+            { padding: Spacing.three, gap: Spacing.four, paddingBottom: Spacing.six },
             contentContainerStyle,
           ]}
           {...rest}

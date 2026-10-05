@@ -31,11 +31,48 @@ export async function createBudgetRule(
 
   return db.transaction(async (tx) => {
     const [rule] = await tx.insert(budgetRules).values({ name, isCustom, isActive: false }).returning();
-    await tx
-      .insert(budgetRuleAllocations)
-      .values(allocations.map((a) => ({ budgetRuleId: rule.id, label: a.label, percentage: a.percentage })));
+    await tx.insert(budgetRuleAllocations).values(
+      allocations.map((a) => ({
+        budgetRuleId: rule.id,
+        label: a.label,
+        percentage: a.percentage,
+        isMonitored: a.isMonitored ?? false,
+      })),
+    );
     return rule;
   });
+}
+
+/** Replaces a rule's name and every allocation row (same validation as create). */
+export async function updateBudgetRule(id: number, name: string, allocations: BudgetAllocation[]) {
+  const { valid } = validateAllocationsSumTo100(allocations);
+  if (!valid) {
+    throw new Error('Allocation percentages must sum to 100%');
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.update(budgetRules).set({ name }).where(eq(budgetRules.id, id));
+    await tx.delete(budgetRuleAllocations).where(eq(budgetRuleAllocations.budgetRuleId, id));
+    await tx.insert(budgetRuleAllocations).values(
+      allocations.map((a) => ({
+        budgetRuleId: id,
+        label: a.label,
+        percentage: a.percentage,
+        isMonitored: a.isMonitored ?? false,
+      })),
+    );
+  });
+}
+
+/** Rejects deleting the currently active rule — the user must activate a different one first. */
+export async function deleteBudgetRule(id: number) {
+  const [rule] = await db.select().from(budgetRules).where(eq(budgetRules.id, id));
+  if (!rule) return;
+  if (rule.isActive) {
+    throw new Error('No puedes eliminar la regla activa. Activa otra regla primero.');
+  }
+
+  await db.delete(budgetRules).where(eq(budgetRules.id, id));
 }
 
 export async function activateBudgetRule(id: number) {

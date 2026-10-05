@@ -37,10 +37,11 @@ export function FormField({ label, error, style, ...rest }: FormFieldProps) {
 const styles = StyleSheet.create({
   input: {
     borderWidth: 1,
-    borderRadius: Radius.small,
+    borderRadius: Radius.medium,
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
+    paddingVertical: Spacing.three,
     fontSize: 16,
     marginTop: Spacing.one,
+    minHeight: 48,
   },
 });

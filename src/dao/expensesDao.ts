@@ -1,6 +1,6 @@
-import { and, eq, gte, lte } from 'drizzle-orm';
+import { and, eq, gte, lte, sql } from 'drizzle-orm';
 
-import { db } from '@/db/client';
+import { db, type Database } from '@/db/client';
 import { expenses } from '@/db/schema';
 import type { NewExpense } from '@/models';
 
@@ -11,13 +11,20 @@ function monthRange(year: number, month: number) {
   return { start, end };
 }
 
-export async function listExpensesForMonth(year: number, month: number, categoryId?: number) {
+export async function listExpensesForMonth(year: number, month: number) {
   const { start, end } = monthRange(year, month);
-  const rows = await db
+  return db
     .select()
     .from(expenses)
     .where(and(gte(expenses.date, start), lte(expenses.date, end)));
-  return categoryId ? rows.filter((e) => e.categoryId === categoryId) : rows;
+}
+
+/** All-time expense total, across every month — feeds the global "Disponible". */
+export async function sumAllExpensesCents(database: Database = db): Promise<number> {
+  const [row] = await database
+    .select({ total: sql<number>`coalesce(sum(${expenses.amountCents}), 0)` })
+    .from(expenses);
+  return Number(row?.total ?? 0);
 }
 
 export async function createExpense(input: NewExpense) {
@@ -32,16 +39,4 @@ export async function updateExpense(id: number, input: Partial<NewExpense>) {
 
 export async function deleteExpense(id: number) {
   await db.delete(expenses).where(eq(expenses.id, id));
-}
-
-export async function sumExpensesByCategoryForMonth(
-  year: number,
-  month: number,
-): Promise<Record<number, number>> {
-  const rows = await listExpensesForMonth(year, month);
-  return rows.reduce<Record<number, number>>((acc, row) => {
-    if (row.categoryId == null) return acc;
-    acc[row.categoryId] = (acc[row.categoryId] ?? 0) + row.amountCents;
-    return acc;
-  }, {});
 }

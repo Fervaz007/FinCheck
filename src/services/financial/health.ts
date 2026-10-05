@@ -1,49 +1,71 @@
-import { roundPercentage } from '@/utils/money';
+import type { BudgetComplianceRow } from './budget';
 
-export type HealthStatus = 'saludable' | 'atencion' | 'riesgo' | 'critico';
+export type HealthStatus =
+  | 'saludable'
+  | 'atencion'
+  | 'riesgo'
+  | 'critico'
+  | 'sin_limite'
+  | 'sin_ingreso';
+type GroupStatus = Exclude<HealthStatus, 'sin_limite' | 'sin_ingreso'>;
+
+const STATUS_SEVERITY: Record<GroupStatus, number> = {
+  saludable: 0,
+  atencion: 1,
+  riesgo: 2,
+  critico: 3,
+};
 
 export interface HealthRuleConfig {
-  /** Configured max % of income destined to debt (from the debt-limit capability). */
-  debtLimitPct: number;
-  /** Minimum % of income that should go to savings to be considered healthy. */
-  minSavingsRatioPct: number;
-  /** Percentage-point margin below the debt limit that already counts as "atención". */
+  /** Percentage-point margin below a group's allocated % that already counts as "atención" for that group. */
   attentionMarginPct: number;
 }
 
-export interface HealthMetrics {
-  incomeCents: number;
-  debtPaymentsCents: number;
-  savingsCents: number;
-  availableCents: number;
+export interface GroupHealthStatus {
+  label: string;
+  status: GroupStatus;
 }
 
 export interface HealthResult {
   status: HealthStatus;
-  debtRatioPct: number;
-  savingsRatioPct: number;
+  groupStatuses: GroupHealthStatus[];
 }
 
+function statusForRow(row: BudgetComplianceRow, attentionMarginPct: number): GroupStatus {
+  if (row.actualPct > row.allocatedPct + attentionMarginPct) return 'critico';
+  if (row.actualPct > row.allocatedPct) return 'riesgo';
+  if (row.actualPct > row.allocatedPct - attentionMarginPct) return 'atencion';
+  return 'saludable';
+}
+
+/**
+ * Health status is the worst status across every monitored budget-rule group,
+ * measured against the fixed monthly income (not the available balance) — so
+ * spending or withdrawing cash never changes it. See budget-on-fixed-income
+ * design decisions #3/#4. No fixed income → `sin_ingreso`; no monitored
+ * groups → `sin_limite`.
+ */
 export function computeFinancialHealth(
-  metrics: HealthMetrics,
+  monitoredRows: BudgetComplianceRow[],
+  fixedMonthlyIncomeCents: number,
   config: HealthRuleConfig,
 ): HealthResult {
-  const debtRatioPct = roundPercentage(metrics.debtPaymentsCents, metrics.incomeCents);
-  const savingsRatioPct = roundPercentage(metrics.savingsCents, metrics.incomeCents);
-
-  let status: HealthStatus;
-  if (metrics.availableCents < 0 || debtRatioPct > config.debtLimitPct + config.attentionMarginPct) {
-    status = 'critico';
-  } else if (debtRatioPct > config.debtLimitPct) {
-    status = 'riesgo';
-  } else if (
-    debtRatioPct > config.debtLimitPct - config.attentionMarginPct ||
-    savingsRatioPct < config.minSavingsRatioPct
-  ) {
-    status = 'atencion';
-  } else {
-    status = 'saludable';
+  if (fixedMonthlyIncomeCents <= 0) {
+    return { status: 'sin_ingreso', groupStatuses: [] };
+  }
+  if (monitoredRows.length === 0) {
+    return { status: 'sin_limite', groupStatuses: [] };
   }
 
-  return { status, debtRatioPct, savingsRatioPct };
+  const groupStatuses = monitoredRows.map((row) => ({
+    label: row.label,
+    status: statusForRow(row, config.attentionMarginPct),
+  }));
+
+  const worst = groupStatuses.reduce<GroupStatus>(
+    (acc, g) => (STATUS_SEVERITY[g.status] > STATUS_SEVERITY[acc] ? g.status : acc),
+    'saludable',
+  );
+
+  return { status: worst, groupStatuses };
 }

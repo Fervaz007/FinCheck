@@ -29,6 +29,48 @@
       "when": 1790571564844,
       "tag": "0003_good_zemo",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1790693862621,
+      "tag": "0004_thin_shen",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1790715565014,
+      "tag": "0005_stiff_micromax",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1790715585675,
+      "tag": "0006_gigantic_wrecking_crew",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1790721284800,
+      "tag": "0007_drop_is_debt_limit",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1790721298860,
+      "tag": "0008_add_is_monitored",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1790908238616,
+      "tag": "0009_lively_patch",
+      "breakpoints": true
     }
   ]
 }

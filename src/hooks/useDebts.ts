@@ -1,6 +1,8 @@
+import { addDays } from 'date-fns';
+import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 
-import { confirmPayment, deriveStatus, listPaymentsForDebt } from '@/dao/debtPaymentsDao';
+import { insertConfirmedPayment } from '@/dao/debtPaymentsDao';
 import {
   createChildDebt,
   createDebt,
@@ -10,27 +12,19 @@ import {
   type NewChildDebt,
   type ResolvedDebt,
 } from '@/dao/debtsDao';
-import { createRecurringTransaction } from '@/dao/recurringTransactionsDao';
 import { db } from '@/db/client';
 import type { NewDebt } from '@/models';
-import { runReconciliation } from '@/services/recurring/reconciliation';
-
-export interface DebtWithPayments extends ResolvedDebt {
-  payments: Awaited<ReturnType<typeof listPaymentsForDebt>>;
-}
+import { computeOccurrences } from '@/services/recurring/computeOccurrences';
+import { formatOccurrenceDate, runReconciliation } from '@/services/recurring/reconciliation';
 
 export function useDebts() {
-  const [debts, setDebts] = useState<DebtWithPayments[]>([]);
+  const [debts, setDebts] = useState<ResolvedDebt[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const rows = await listDebtsResolved();
-      const withPayments = await Promise.all(
-        rows.map(async (debt) => ({ ...debt, payments: await listPaymentsForDebt(debt.id) })),
-      );
-      setDebts(withPayments);
+      setDebts(await listDebtsResolved());
     } finally {
       setLoading(false);
     }
@@ -40,27 +34,36 @@ export function useDebts() {
     refresh();
   }, [refresh]);
 
+  // The drawer never unmounts Deudas/Inicio, and debts change from other screens;
+  // refetch on focus so each screen stays current.
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh]),
+  );
+
   const today = new Date();
 
   return {
     debts,
     loading,
     refresh,
-    create: async (input: NewDebt, autoPayment?: { paymentDay: number; accountId: number }) => {
+    create: async (input: NewDebt) => {
       const debt = await createDebt(input);
-      if (autoPayment) {
-        await createRecurringTransaction({
-          kind: 'debt_payment',
-          description: `Pago ${debt.name}`,
-          debtId: debt.id,
-          accountId: autoPayment.accountId,
-          amountCents: debt.monthlyPaymentCents,
-          recurrenceType: 'MONTHLY_DAY',
-          recurrenceConfig: { type: 'MONTHLY_DAY', day: autoPayment.paymentDay },
-          anchorDate: debt.startDate,
-        });
-        // Materialize this month's payment right away if the day already passed.
+      if (input.isRecurring) {
+        // Reconciliation generates the per-quincena auto-confirmed deductions,
+        // counting the current period immediately.
         await runReconciliation(db, new Date());
+      } else {
+        // Non-recurring: deduct the full total once, offset by any apartado inicial.
+        const deducted = Math.max(0, debt.monthlyPaymentCents - (debt.reserveAccumulatedCents ?? 0));
+        if (deducted > 0) {
+          await insertConfirmedPayment({
+            debtId: debt.id,
+            amountCents: deducted,
+            occurrenceDate: debt.startDate,
+          });
+        }
       }
       await refresh();
     },
@@ -76,18 +79,28 @@ export function useDebts() {
       await deleteDebt(id);
       await refresh();
     },
-    confirmPayment: async (paymentId: number, accountId?: number) => {
-      await confirmPayment(paymentId, accountId);
-      await refresh();
-    },
-    pendingPayments: debts.flatMap((debt) =>
-      debt.payments
-        .filter((p) => p.status === 'scheduled')
-        .map((p) => ({
-          ...p,
-          debtName: debt.name,
-          derivedStatus: deriveStatus(p.status, p.occurrenceDate, today),
-        })),
-    ),
+    // Informational upcoming-payment reminders — the money is deducted
+    // automatically on the quincena cutoffs, so there is nothing to confirm.
+    upcomingReminders: debts
+      .filter((d) => d.isRecurring && d.dueDate)
+      .map((d) => {
+        const day = Number(d.dueDate);
+        const [next] = computeOccurrences(
+          { type: 'MONTHLY_DAY', day },
+          today,
+          addDays(today, 1),
+          addDays(today, 400),
+        );
+        return {
+          id: d.id,
+          debtName: d.name,
+          day,
+          nextDate: next ? formatOccurrenceDate(next) : null,
+          amountCents: d.monthlyPaymentCents,
+        };
+      })
+      .filter((r): r is { id: number; debtName: string; day: number; nextDate: string; amountCents: number } =>
+        r.nextDate != null,
+      ),
   };
 }

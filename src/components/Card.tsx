@@ -1,13 +1,29 @@
 import type { ViewProps } from 'react-native';
 
 import { ThemedView } from './themed-view';
+import { useTheme } from '@/hooks/use-theme';
 import { Radius, Spacing } from '@/theme';
 
-export function Card({ style, ...rest }: ViewProps) {
+interface CardProps extends ViewProps {
+  /** Nested block inside another card — uses a lighter elevated tone instead of the base card tone. */
+  elevated?: boolean;
+}
+
+export function Card({ style, elevated, ...rest }: CardProps) {
+  const theme = useTheme();
+
   return (
     <ThemedView
-      type="backgroundElement"
-      style={[{ borderRadius: Radius.medium, padding: Spacing.three }, style]}
+      type={elevated ? 'backgroundElevated' : 'backgroundElement'}
+      style={[
+        {
+          borderRadius: Radius.large,
+          padding: Spacing.three,
+          borderWidth: 1,
+          borderColor: theme.border,
+        },
+        style,
+      ]}
       {...rest}
     />
   );

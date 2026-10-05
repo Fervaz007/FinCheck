@@ -39,12 +39,12 @@ export function ChipSelect<T extends string | number>({
                 style={[
                   styles.chip,
                   {
-                    backgroundColor: selected ? theme.primary : theme.backgroundSelected,
-                    borderColor: theme.border,
+                    backgroundColor: selected ? theme.primary : theme.backgroundElevated,
+                    borderColor: selected ? theme.primary : theme.border,
                   },
                 ]}
               >
-                <ThemedText type="small" style={{ color: selected ? '#fff' : theme.text }}>
+                <ThemedText type="smallBold" style={{ color: selected ? '#fff' : theme.textSecondary }}>
                   {option.label}
                 </ThemedText>
               </Pressable>
@@ -62,5 +62,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.pill,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
+    minHeight: 40,
+    justifyContent: 'center',
   },
 });

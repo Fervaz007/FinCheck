@@ -1,6 +1,7 @@
 export interface BudgetAllocation {
   label: string;
   percentage: number;
+  isMonitored?: boolean;
 }
 
 export function validateAllocationsSumTo100(allocations: BudgetAllocation[]): {
@@ -42,15 +43,20 @@ export function computeAllocationForAmount(
   }));
 }
 
+/**
+ * Per-group occupied-vs-limit. `baseCents` is the fixed monthly income (the
+ * stable budget base); `actualByGroup` is each group's standing monthly
+ * obligation. Both are independent of day-to-day spending/withdrawals.
+ */
 export function computeBudgetCompliance(
   allocations: BudgetAllocation[],
   actualByGroup: Record<string, number>,
-  incomeCents: number,
+  baseCents: number,
 ): BudgetComplianceRow[] {
   return allocations.map((allocation) => {
-    const allocatedCents = Math.round((incomeCents * allocation.percentage) / 100);
+    const allocatedCents = Math.round((baseCents * allocation.percentage) / 100);
     const actualCents = actualByGroup[allocation.label] ?? 0;
-    const actualPct = incomeCents === 0 ? 0 : (actualCents / incomeCents) * 100;
+    const actualPct = baseCents === 0 ? 0 : (actualCents / baseCents) * 100;
 
     return {
       label: allocation.label,

@@ -1,49 +1,47 @@
-import { roundPercentage } from '@/utils/money';
+export type SimulationMode = 'a_meses' | 'contado';
 
-export interface SimulationInput {
+export interface AMesesSimulationInput {
   incomeCents: number;
-  currentDebtPaymentsCents: number;
-  debtLimitPct: number;
+  allocatedPct: number;
+  currentTypeCommitmentCents: number;
   newMonthlyPaymentCents: number;
-  currentAvailableCents: number;
 }
 
-export interface SimulationSide {
-  debtPaymentsCents: number;
-  debtRatioPct: number;
-}
-
-export interface SimulationResult {
-  before: SimulationSide;
-  after: SimulationSide;
-  availableAfterCents: number;
+export interface AMesesSimulationResult {
+  allocatedCents: number;
+  beforeCommitmentCents: number;
+  afterCommitmentCents: number;
+  remainingCapacityCents: number;
   exceedsLimit: boolean;
 }
 
-export function simulateNewDebt(input: SimulationInput): SimulationResult {
-  const {
-    incomeCents,
-    currentDebtPaymentsCents,
-    debtLimitPct,
-    newMonthlyPaymentCents,
-    currentAvailableCents,
-  } = input;
-
-  const before: SimulationSide = {
-    debtPaymentsCents: currentDebtPaymentsCents,
-    debtRatioPct: roundPercentage(currentDebtPaymentsCents, incomeCents),
-  };
-
-  const afterDebtPaymentsCents = currentDebtPaymentsCents + newMonthlyPaymentCents;
-  const after: SimulationSide = {
-    debtPaymentsCents: afterDebtPaymentsCents,
-    debtRatioPct: roundPercentage(afterDebtPaymentsCents, incomeCents),
-  };
+/** "A meses": validates the new monthly payment against the selected Tipo's remaining capacity under the active rule. */
+export function simulateAMesesPurchase(input: AMesesSimulationInput): AMesesSimulationResult {
+  const { incomeCents, allocatedPct, currentTypeCommitmentCents, newMonthlyPaymentCents } = input;
+  const allocatedCents = Math.round((incomeCents * allocatedPct) / 100);
+  const afterCommitmentCents = currentTypeCommitmentCents + newMonthlyPaymentCents;
 
   return {
-    before,
-    after,
-    availableAfterCents: currentAvailableCents - newMonthlyPaymentCents,
-    exceedsLimit: after.debtRatioPct > debtLimitPct,
+    allocatedCents,
+    beforeCommitmentCents: currentTypeCommitmentCents,
+    afterCommitmentCents,
+    remainingCapacityCents: allocatedCents - afterCommitmentCents,
+    exceedsLimit: afterCommitmentCents > allocatedCents,
   };
+}
+
+export interface ContadoSimulationInput {
+  priceCents: number;
+  availableCents: number;
+}
+
+export interface ContadoSimulationResult {
+  availableAfterCents: number;
+  exceedsAvailable: boolean;
+}
+
+/** "A contado": validates the purchase price directly against real available money, no Tipo involved. */
+export function simulateContadoPurchase(input: ContadoSimulationInput): ContadoSimulationResult {
+  const availableAfterCents = input.availableCents - input.priceCents;
+  return { availableAfterCents, exceedsAvailable: availableAfterCents < 0 };
 }

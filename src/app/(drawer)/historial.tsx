@@ -29,32 +29,34 @@ export default function HistorialScreen() {
         <EmptyState message="Todavía no hay meses cerrados. El historial se genera automáticamente al usar el Dashboard." />
       ) : (
         summaries.map((s) => (
-          <Card key={`${s.year}-${s.month}`} style={{ gap: Spacing.one }}>
-            <ThemedText type="smallBold">
+          <Card key={`${s.year}-${s.month}`} style={{ gap: Spacing.two }}>
+            <ThemedText type="heading">
               {MONTH_NAMES[s.month - 1]} {s.year}
             </ThemedText>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <ThemedText themeColor="textSecondary">Ingresos</ThemedText>
-              <ThemedText themeColor="income">{formatCents(s.incomeTotalCents)}</ThemedText>
-            </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <ThemedText themeColor="textSecondary">Egresos</ThemedText>
-              <ThemedText themeColor="expense">{formatCents(s.expenseTotalCents)}</ThemedText>
-            </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <ThemedText themeColor="textSecondary">Deudas</ThemedText>
-              <ThemedText themeColor="debt">{formatCents(s.debtPaymentTotalCents)}</ThemedText>
-            </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <ThemedText themeColor="textSecondary">Ahorro</ThemedText>
-              <ThemedText themeColor="savings">{formatCents(s.savingsTotalCents)}</ThemedText>
-            </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <ThemedText themeColor="textSecondary">Disponible</ThemedText>
-              <ThemedText type="smallBold">{formatCents(s.availableCents)}</ThemedText>
+            <View style={{ gap: Spacing.one }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <ThemedText type="small" themeColor="textSecondary">Ingresos</ThemedText>
+                <ThemedText type="smallBold" themeColor="income">{formatCents(s.incomeTotalCents)}</ThemedText>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <ThemedText type="small" themeColor="textSecondary">Egresos</ThemedText>
+                <ThemedText type="smallBold" themeColor="expense">{formatCents(s.expenseTotalCents)}</ThemedText>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <ThemedText type="small" themeColor="textSecondary">Deudas</ThemedText>
+                <ThemedText type="smallBold" themeColor="debt">{formatCents(s.debtPaymentTotalCents)}</ThemedText>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <ThemedText type="small" themeColor="textSecondary">Ahorro</ThemedText>
+                <ThemedText type="smallBold" themeColor="savings">{formatCents(s.savingsTotalCents)}</ThemedText>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <ThemedText type="small" themeColor="textSecondary">Disponible</ThemedText>
+                <ThemedText type="smallBold">{formatCents(s.availableCents)}</ThemedText>
+              </View>
             </View>
             {s.healthStatusSnapshot && (
-              <ThemedText type="small" themeColor="textSecondary">
+              <ThemedText type="caption" themeColor="textSecondary">
                 Salud registrada: {s.healthStatusSnapshot} · Límite de deuda vigente: {s.debtLimitPctSnapshot}%
               </ThemedText>
             )}

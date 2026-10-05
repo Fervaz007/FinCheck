@@ -7,7 +7,6 @@ import { ThemedText } from '@/components/themed-text';
 import { useDashboardSummary } from '@/hooks/useDashboardSummary';
 import { useDebts } from '@/hooks/useDebts';
 import { useAppStore } from '@/hooks/useAppStore';
-import { useTheme } from '@/hooks/use-theme';
 import { formatCents } from '@/utils/money';
 import { Spacing } from '@/theme';
 import type { HealthStatus } from '@/services/financial/health';
@@ -18,6 +17,8 @@ const HEALTH_LABEL: Record<HealthStatus, string> = {
   atencion: '🟡 Atención',
   riesgo: '🟠 Riesgo',
   critico: '🔴 Crítico',
+  sin_limite: '⚪ Marca grupos a monitorear en tu regla',
+  sin_ingreso: '⚪ Configura tus ingresos fijos',
 };
 
 const MONTH_NAMES = [
@@ -28,7 +29,7 @@ const MONTH_NAMES = [
 function StatRow({ label, value, color }: { label: string; value: string; color?: ThemeColor }) {
   return (
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: Spacing.one }}>
-      <ThemedText themeColor="textSecondary">{label}</ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">{label}</ThemedText>
       <ThemedText type="smallBold" themeColor={color}>
         {value}
       </ThemedText>
@@ -37,10 +38,9 @@ function StatRow({ label, value, color }: { label: string; value: string; color?
 }
 
 export default function DashboardScreen() {
-  const theme = useTheme();
   const { activeMonth, goToPreviousMonth, goToNextMonth } = useAppStore();
   const { summary, loading } = useDashboardSummary();
-  const { pendingPayments } = useDebts();
+  const { upcomingReminders } = useDebts();
 
   return (
     <ScreenContainer>
@@ -51,15 +51,44 @@ export default function DashboardScreen() {
         </ThemedText>
       </View>
 
+      {summary && (
+        <Card style={{ gap: Spacing.one }}>
+          <ThemedText type="caption" themeColor="textSecondary">
+            DISPONIBLE
+          </ThemedText>
+          <ThemedText type="title" themeColor={summary.globalAvailableCents < 0 ? 'critical' : undefined}>
+            {formatCents(summary.globalAvailableCents)}
+          </ThemedText>
+          <ThemedText type="caption" themeColor="textSecondary">
+            Tu dinero disponible en total (todos los meses), ya restando las deudas pagadas.
+          </ThemedText>
+        </Card>
+      )}
+
+      {summary && (
+        <Card style={{ gap: Spacing.one }}>
+          <ThemedText type="caption" themeColor="textSecondary">
+            INGRESOS MENSUALES
+          </ThemedText>
+          <ThemedText type="subtitle" themeColor="income">
+            {formatCents(summary.fixedMonthlyIncomeCents)}
+          </ThemedText>
+          <ThemedText type="caption" themeColor="textSecondary">
+            Lo que recibes al mes de forma fija (tus ingresos recurrentes, normalizados a mensual).
+            Es la base de tu presupuesto.
+          </ThemedText>
+        </Card>
+      )}
+
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Pressable onPress={goToPreviousMonth}>
-          <ThemedText type="smallBold">◀</ThemedText>
+        <Pressable hitSlop={8} onPress={goToPreviousMonth}>
+          <ThemedText type="heading">◀</ThemedText>
         </Pressable>
         <ThemedText type="subtitle">
           {MONTH_NAMES[activeMonth.month - 1]} {activeMonth.year}
         </ThemedText>
-        <Pressable onPress={goToNextMonth}>
-          <ThemedText type="smallBold">▶</ThemedText>
+        <Pressable hitSlop={8} onPress={goToNextMonth}>
+          <ThemedText type="heading">▶</ThemedText>
         </Pressable>
       </View>
 
@@ -69,52 +98,71 @@ export default function DashboardScreen() {
         </Card>
       ) : (
         <>
-          <Card>
-            <ThemedText type="smallBold" themeColor="textSecondary">
+          <Card style={{ gap: Spacing.one }}>
+            <ThemedText type="caption" themeColor="textSecondary">
               RESUMEN DEL MES
             </ThemedText>
             <StatRow label="Ingresos" value={formatCents(summary.incomeTotalCents)} color="income" />
             <StatRow label="Egresos" value={formatCents(summary.expenseTotalCents)} color="expense" />
             <StatRow label="Deudas (confirmadas)" value={formatCents(summary.debtPaymentTotalCents)} color="debt" />
-            <StatRow label="Ahorro" value={formatCents(summary.savingsTotalCents)} color="savings" />
-            <StatRow label="Disponible" value={formatCents(summary.availableCents)} />
+            <StatRow label="Balance del mes" value={formatCents(summary.availableCents)} />
           </Card>
 
-          <Card>
-            <ThemedText type="smallBold" themeColor="textSecondary">
+          <Card style={{ gap: Spacing.one }}>
+            <ThemedText type="caption" themeColor="textSecondary">
               SALUD FINANCIERA
             </ThemedText>
             <ThemedText type="subtitle">{HEALTH_LABEL[summary.health.status]}</ThemedText>
-            <StatRow label="Deudas / ingreso" value={`${summary.health.debtRatioPct}%`} />
-            <StatRow label="Ahorro / ingreso" value={`${summary.health.savingsRatioPct}%`} />
-          </Card>
-
-          <Card>
-            <ThemedText type="smallBold" themeColor="textSecondary">
-              SALDO
-            </ThemedText>
-            <StatRow label="Saldo real" value={formatCents(summary.realBalanceCents)} />
-            <StatRow label="Saldo proyectado (fin de mes)" value={formatCents(summary.projectedBalanceCents)} />
-          </Card>
-
-          {pendingPayments.length > 0 && (
-            <Card style={{ borderColor: theme.critical, borderWidth: 1 }}>
-              <ThemedText type="smallBold" themeColor="critical">
-                PAGOS DE DEUDA PENDIENTES
+            {summary.health.groupStatuses.length > 0 && (
+              <ThemedText type="caption" themeColor="textSecondary">
+                Detalle por sección abajo, en "Por sección".
               </ThemedText>
-              {pendingPayments.map((p) => (
+            )}
+          </Card>
+
+          {summary.fixedMonthlyIncomeCents === 0 ? (
+            <Card style={{ gap: Spacing.one }}>
+              <ThemedText type="caption" themeColor="textSecondary">
+                POR SECCIÓN
+              </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                Configura tus ingresos fijos (recurrentes) en Movimientos para ver tu presupuesto por
+                sección.
+              </ThemedText>
+            </Card>
+          ) : (
+            summary.compliance.length > 0 && (
+              <Card style={{ gap: Spacing.one }}>
+                <ThemedText type="caption" themeColor="textSecondary">
+                  POR SECCIÓN ({summary.compliance.length})
+                </ThemedText>
+                {summary.compliance.map((row) => (
+                  <StatRow
+                    key={row.label}
+                    label={`${row.label} (${row.allocatedPct}%)`}
+                    value={`${formatCents(row.actualCents)} / ${formatCents(row.allocatedCents)}`}
+                    color={row.withinBudget ? 'healthy' : 'critical'}
+                  />
+                ))}
+              </Card>
+            )
+          )}
+
+          {upcomingReminders.length > 0 && (
+            <Card style={{ gap: Spacing.one }}>
+              <ThemedText type="caption" themeColor="textSecondary">
+                PRÓXIMOS PAGOS
+              </ThemedText>
+              {upcomingReminders.map((r) => (
                 <StatRow
-                  key={p.id}
-                  label={`${p.debtName} · ${p.occurrenceDate}${p.derivedStatus === 'vencido' ? ' (vencido)' : ''}`}
-                  value={formatCents(p.amountCents)}
-                  color={p.derivedStatus === 'vencido' ? 'critical' : undefined}
+                  key={r.id}
+                  label={`${r.debtName} · día ${r.day}`}
+                  value={formatCents(r.amountCents)}
                 />
               ))}
-              <Link href="/deudas" asChild>
-                <Pressable>
-                  <ThemedText type="linkPrimary">Ir a confirmar pagos →</ThemedText>
-                </Pressable>
-              </Link>
+              <ThemedText type="caption" themeColor="textSecondary">
+                Solo un recordatorio — el dinero ya se descuenta solo cada quincena.
+              </ThemedText>
             </Card>
           )}
 

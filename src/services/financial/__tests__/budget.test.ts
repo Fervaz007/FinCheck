@@ -52,4 +52,20 @@ describe('computeBudgetCompliance', () => {
     expect(rows[0].allocatedCents).toBe(900_000);
     expect(rows[0].withinBudget).toBe(false);
   });
+
+  it('bases the limit on the fixed-income base, independent of actual spending', () => {
+    // Same base (fixed monthly income) → same limit, regardless of how much is
+    // actually committed. The base does not shrink when money is spent/withdrawn.
+    const base = 700_000;
+    const low = computeBudgetCompliance([{ label: 'necesidades', percentage: 50 }], { necesidades: 0 }, base);
+    const high = computeBudgetCompliance(
+      [{ label: 'necesidades', percentage: 50 }],
+      { necesidades: 500_000 },
+      base,
+    );
+    expect(low[0].allocatedCents).toBe(350_000);
+    expect(high[0].allocatedCents).toBe(350_000);
+    expect(low[0].withinBudget).toBe(true);
+    expect(high[0].withinBudget).toBe(false);
+  });
 });

@@ -1,0 +1,1 @@
+ALTER TABLE `budget_rule_allocations` ADD `is_monitored` integer DEFAULT false NOT NULL;

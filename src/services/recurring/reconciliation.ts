@@ -1,5 +1,5 @@
 import { addDays, format } from 'date-fns';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 
 import type { Database } from '@/db/client';
 import {
@@ -12,6 +12,7 @@ import {
   settings,
 } from '@/db/schema';
 
+import { computeReserveAccrualCents } from '@/services/financial/debtReserves';
 import { deriveParentMonthlyPaymentCents } from '@/services/financial/debtHierarchy';
 import { parseISODate } from '@/utils/date';
 
@@ -22,11 +23,27 @@ export function formatOccurrenceDate(date: Date): string {
   return format(date, 'yyyy-MM-dd');
 }
 
+/** Always día 15 / último día del mes — deductions follow the quincena, never a debt's own payment day. */
+const CUTOFF_CONFIG: RecurrenceConfig = { type: 'SEMIMONTHLY_FIXED', dayA: 15, dayB: 'last' };
+
+/** The most recent quincena cutoff (15th or last day of month) on or before `date`. */
+function mostRecentCutoffOnOrBefore(date: Date): Date {
+  const y = date.getFullYear();
+  const m = date.getMonth();
+  const day = date.getDate();
+  const lastDay = new Date(y, m + 1, 0).getDate();
+  if (day >= lastDay) return new Date(y, m, lastDay);
+  if (day >= 15) return new Date(y, m, 15);
+  return new Date(y, m, 0); // last day of the previous month
+}
+
 /**
- * Runs on app open. For every active recurring transaction, generates every
- * occurrence that should have happened between its last processed occurrence
- * (exclusive) and `today` (inclusive). The whole pass commits atomically:
- * either every pending occurrence is generated, or none are.
+ * Runs on app open. Generates every pending recurring-income/expense occurrence
+ * between its last processed occurrence (exclusive) and `today` (inclusive), and
+ * auto-deducts each recurring debt's per-quincena share for every cutoff passed
+ * (as already-confirmed payments, so the global "Disponible" and per-section
+ * compliance reflect them with no extra formula — see design.md decision #14).
+ * The whole pass commits atomically.
  */
 export async function runReconciliation(db: Database, today: Date): Promise<void> {
   await db.transaction(async (tx) => {
@@ -51,49 +68,15 @@ export async function runReconciliation(db: Database, today: Date): Promise<void
 
       const occurrences = computeOccurrences(config, anchor, from, today);
 
-      // Resolved once per recurring transaction, not per occurrence: a parent
-      // debt's monthly obligation is derived from its active children, so the
-      // scheduled amount must reflect today's total, not whatever was stored
-      // on the recurring transaction when it was first set up.
-      let debtPaymentAmountCents = rt.amountCents;
-      if (rt.kind === 'debt_payment' && rt.debtId != null) {
-        const children = await tx.select().from(debts).where(eq(debts.parentDebtId, rt.debtId));
-        if (children.length > 0) {
-          debtPaymentAmountCents = deriveParentMonthlyPaymentCents(children);
-        }
-      }
-
       for (const occurrenceDate of occurrences) {
         const occurrenceDateStr = formatOccurrenceDate(occurrenceDate);
 
-        if (rt.kind === 'debt_payment') {
-          if (rt.debtId == null) continue;
-          const [inserted] = await tx
-            .insert(debtPayments)
-            .values({
-              debtId: rt.debtId,
-              accountId: rt.accountId,
-              amountCents: debtPaymentAmountCents,
-              occurrenceDate: occurrenceDateStr,
-              status: 'scheduled',
-              recurringTransactionId: rt.id,
-            })
-            .returning({ id: debtPayments.id });
-
-          await tx.insert(recurrenceOccurrences).values({
-            recurringTransactionId: rt.id,
-            occurrenceDate: occurrenceDateStr,
-            generatedEntityType: 'debt_payment',
-            generatedEntityId: inserted.id,
-          });
-        } else if (rt.kind === 'income') {
-          if (rt.accountId == null) continue;
+        if (rt.kind === 'income') {
           const [inserted] = await tx
             .insert(income)
             .values({
               description: rt.description,
-              categoryId: rt.categoryId,
-              accountId: rt.accountId,
+              origin: rt.origin,
               amountCents: rt.amountCents,
               date: occurrenceDateStr,
               recurringTransactionId: rt.id,
@@ -108,13 +91,10 @@ export async function runReconciliation(db: Database, today: Date): Promise<void
             generatedEntityId: inserted.id,
           });
         } else {
-          if (rt.accountId == null) continue;
           const [inserted] = await tx
             .insert(expenses)
             .values({
               description: rt.description,
-              categoryId: rt.categoryId,
-              accountId: rt.accountId,
               amountCents: rt.amountCents,
               date: occurrenceDateStr,
               recurringTransactionId: rt.id,
@@ -146,6 +126,57 @@ export async function runReconciliation(db: Database, today: Date): Promise<void
           })
           .where(eq(recurringTransactions.id, rt.id));
       }
+    }
+
+    // Recurring debts auto-deduct a per-quincena share on every cutoff that has
+    // passed, as already-confirmed payments. The quincena in progress at creation
+    // counts immediately (first run starts from the most recent cutoff on or
+    // before the debt's start date); later runs continue strictly after the last
+    // processed cutoff, so catch-up never double-counts. The starting reserve
+    // ("apartado inicial", stored in reserveAccumulatedCents) is a consumable
+    // buffer that offsets the first deductions until used up.
+    const recurringDebts = await tx
+      .select()
+      .from(debts)
+      .where(and(eq(debts.isRecurring, true), eq(debts.status, 'activa'), isNull(debts.parentDebtId)));
+
+    for (const debt of recurringDebts) {
+      if (debt.periodicity == null) continue;
+
+      const from = debt.reserveLastAccrualDate
+        ? addDays(parseISODate(debt.reserveLastAccrualDate), 1)
+        : mostRecentCutoffOnOrBefore(parseISODate(debt.startDate));
+
+      const cutoffs = computeOccurrences(CUTOFF_CONFIG, from, from, today);
+      if (cutoffs.length === 0) continue;
+
+      const children = await tx.select().from(debts).where(eq(debts.parentDebtId, debt.id));
+      const currentTotalCents =
+        children.length > 0 ? deriveParentMonthlyPaymentCents(children) : debt.monthlyPaymentCents;
+      const perCutoffCents = computeReserveAccrualCents(debt.periodicity, currentTotalCents);
+
+      let buffer = debt.reserveAccumulatedCents;
+      for (const cutoff of cutoffs) {
+        const deducted = Math.max(0, perCutoffCents - buffer);
+        buffer = Math.max(0, buffer - perCutoffCents);
+        if (deducted > 0) {
+          await tx.insert(debtPayments).values({
+            debtId: debt.id,
+            amountCents: deducted,
+            occurrenceDate: formatOccurrenceDate(cutoff),
+            status: 'confirmed',
+            confirmedAt: today.toISOString(),
+          });
+        }
+      }
+
+      await tx
+        .update(debts)
+        .set({
+          reserveAccumulatedCents: buffer,
+          reserveLastAccrualDate: formatOccurrenceDate(cutoffs[cutoffs.length - 1]),
+        })
+        .where(eq(debts.id, debt.id));
     }
 
     const existingSettings = await tx.select().from(settings).limit(1);

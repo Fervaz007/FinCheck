@@ -1,0 +1,1 @@
+ALTER TABLE `budget_rule_allocations` DROP COLUMN `is_debt_limit`;

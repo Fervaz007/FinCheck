@@ -5,7 +5,7 @@ import type { Expense, NewExpense } from '@/models';
 
 import { useAppStore } from './useAppStore';
 
-export function useExpenses(categoryId?: number) {
+export function useExpenses() {
   const { activeMonth } = useAppStore();
   const [rows, setRows] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
@@ -13,11 +13,11 @@ export function useExpenses(categoryId?: number) {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      setRows(await listExpensesForMonth(activeMonth.year, activeMonth.month, categoryId));
+      setRows(await listExpensesForMonth(activeMonth.year, activeMonth.month));
     } finally {
       setLoading(false);
     }
-  }, [activeMonth.year, activeMonth.month, categoryId]);
+  }, [activeMonth.year, activeMonth.month]);
 
   useEffect(() => {
     refresh();
